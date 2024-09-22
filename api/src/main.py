@@ -1,8 +1,32 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+import logging
+import os
+from contextlib import asynccontextmanager
 from typing import List
 
-app = FastAPI()
+from fastapi import FastAPI
+from neo4j import GraphDatabase
+from pydantic import BaseModel
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+driver = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    neo4j_uri = os.getenv("NEO4J_URI", "neo4j://localhost:7687")
+    neo4j_username = os.getenv("NEO4J_USERNAME", "neo4j")
+    neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
+    driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_username, neo4j_password))
+    driver.verify_connectivity()
+    logger.info(f"Connected to Neo4j at {neo4j_uri} as {neo4j_username}")
+    
+    yield
+    
+    driver.close()
+    logger.info("Disconnected from Neo4j")
+    
+app = FastAPI(lifespan=lifespan)
 
 class WalletData(BaseModel):
     """
