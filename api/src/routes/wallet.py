@@ -5,7 +5,7 @@ from neo4j import Driver
 router = APIRouter()
 
 @router.get("/{base58_address}", response_model=WalletData)
-async def get_wallet(request: Request, base58_address: str):
+async def get_wallet(request: Request, base58_address: str, force_update: bool = False):
     neo4j_driver = request.app.state.neo4j_driver
     
     # Query the database for the wallet data
