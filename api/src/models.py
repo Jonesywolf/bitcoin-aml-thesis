@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import List
+from pydantic import BaseModel, Field
+from typing import List, Optional
 
 class WalletData(BaseModel):
     """
@@ -65,4 +65,81 @@ class WalletData(BaseModel):
     last_updated: int  # The unix timestamp of the last update to the wallet data
     
 class ConnectedWallets(BaseModel):
+    # TODO: Want inbound and outbound connections, not just connected wallets
+    # TODO: Might also want to include the number of transactions between the wallets or the amount transacted
+    """
+    A model representing information about wallets that have transacted with a given wallet.
+    """
     connected_wallets: List[str]  # A list of Bitcoin wallet addresses connected to the wallet
+
+class PreviousTransactionOutput(BaseModel):
+    """
+    Represents the previous output in a transaction input.
+    """
+    output_type: int = Field(..., alias='type')  # Type of the previous output
+    spent: bool  # Indicates if the output has been spent
+    value: int  # Value of the previous output in satoshis
+    spending_outpoints: List[dict]  # List of spending outpoints
+    n: int  # Index of the output in the transaction
+    tx_index: int  # Transaction index
+    script: str  # Script of the previous output
+    addr: Optional[str]  # Address associated with the previous output
+
+class TransactionInput(BaseModel):
+    """
+    Represents an input in a transaction.
+    """
+    sequence: int  # Sequence number of the input
+    witness: str  # Witness data for the input
+    script: str  # Script of the input
+    index: int  # Index of the input in the transaction
+    prev_out: PreviousTransactionOutput  # Previous output associated with the input
+
+class TransactionOutput(BaseModel):
+    """
+    Represents an output in a transaction.
+    """
+    output_type: int = Field(..., alias='type')
+    spent: bool  # Indicates if the output has been spent
+    value: int  # Value of the output in satoshis
+    spending_outpoints: List[dict]  # List of spending outpoints
+    n: int  # Index of the output in the transaction
+    tx_index: int  # Transaction index
+    script: str  # Script of the output
+    addr: Optional[str]  # Address associated with the output
+
+class Transaction(BaseModel):
+    """
+    Represents a transaction in the blockchain.
+    """
+    hash: str  # Hash of the transaction
+    ver: int  # Version of the transaction
+    vin_sz: int  # Number of inputs in the transaction
+    vout_sz: int  # Number of outputs in the transaction
+    size: int  # Size of the transaction in bytes
+    weight: int  # Weight of the transaction
+    fee: int  # Fee for the transaction in satoshis
+    relayed_by: str  # IP address of the node that relayed the transaction
+    lock_time: int  # Lock time of the transaction
+    tx_index: int  # Transaction index
+    double_spend: bool  # Indicates if the transaction is a double spend
+    time: int  # Timestamp of the transaction
+    block_index: int  # Block index containing the transaction
+    block_height: int  # Block height containing the transaction
+    inputs: List[TransactionInput]  # List of inputs in the transaction
+    out: List[TransactionOutput]  # List of outputs in the transaction
+    result: int  # Result of the transaction
+    balance: int  # Balance after the transaction
+
+class BitcoinAddressQueryResponse(BaseModel):
+    """
+    Represents the response from a Blockchain.com API bitcoin address query.
+    """
+    hash160: str  # Hash160 of the address
+    address: str  # Address string
+    n_tx: int  # Number of transactions associated with the address
+    n_unredeemed: int  # Number of unredeemed outputs
+    total_received: int  # Total amount received by the address in satoshis
+    total_sent: int  # Total amount sent by the address in satoshis
+    final_balance: int  # Final balance of the address in satoshis
+    txs: List[Transaction]  # List of transactions associated with the address

@@ -1,7 +1,8 @@
 import logging
 
 from fastapi import FastAPI
-from src.routes import wallet, connected_wallets
+from src.routes import wallet_data
+from src.routes import connected_wallets
 from src.db.neo4j import lifespan
 
 # Configure logging
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(lifespan=lifespan)
 
-app.include_router(wallet.router, prefix="/wallet")
+app.include_router(wallet_data.router, prefix="/wallet")
 app.include_router(connected_wallets.router, prefix="/connected-wallets")
 
 if __name__ == "__main__":
