@@ -24,18 +24,28 @@ def get_wallet_data_from_api(base58_address: str) -> Tuple[WalletData, Connected
     response = requests.get(api_url)
     response.raise_for_status()  # Raise an exception for HTTP errors
 
-    address_data = None
-    try:
-        address_data = BitcoinAddressQueryResponse.model_validate_json(json.dumps(response.json()))
-    except ValidationError as e:
-        logger.error(f"Error parsing JSON response for BTC address: {base58_address}: {e}")
-        return None, None
-    
+    address_data = get_address_data_from_api(base58_address)  
     if address_data is None:
         return None, None
     
     wallet_data, connected_wallets = convert_to_wallet_data(address_data)
     return wallet_data, connected_wallets
+
+def get_address_data_from_api(base58_address: str) -> BitcoinAddressQueryResponse:
+    """
+    Get the address data from the Blockchain.com API.
+    
+    @param base58_address: The base58 encoded Bitcoin address to query.
+    @return: The BitcoinAddressQueryResponse object populated with the data from the API.
+    """
+    address_data = None
+    response = requests.get(f"https://blockchain.info/rawaddr/{base58_address}")
+    try:
+        address_data = BitcoinAddressQueryResponse.model_validate_json(json.dumps(response.json()))
+    except ValidationError as e:
+        logger.error(f"Error parsing JSON response for BTC address: {base58_address}: {e}")
+        return None
+    return address_data
 
 def convert_to_wallet_data(address_query_response: BitcoinAddressQueryResponse) -> Tuple[WalletData, ConnectedWallets]:
     """
