@@ -14,7 +14,6 @@ class WalletData(BaseModel):
     total_txs: float  # The total number of transactions involving this wallet
     first_sent_block: float  # The block number of the first transaction sent by this wallet
     first_received_block: float  # The block number of the first transaction received by this wallet
-    num_timesteps_appeared_in: float  # The number of distinct time steps this wallet appeared in (may not be necessary)
     btc_transacted_total: float  # The total amount of Bitcoin transacted by this wallet
     btc_transacted_min: float  # The minimum amount of Bitcoin transacted in a single transaction
     btc_transacted_max: float  # The maximum amount of Bitcoin transacted in a single transaction

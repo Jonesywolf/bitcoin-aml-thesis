@@ -302,7 +302,6 @@ def convert_to_wallet_data(address_query_response: BitcoinAddressQueryResponse) 
         transacted_w_address_max=transacted_w_address_max,
         transacted_w_address_mean=transacted_w_address_mean,
         transacted_w_address_median=transacted_w_address_median,
-        num_timesteps_appeared_in=0,  # TODO: remove this field
         class_inference=-1,  # Placeholder, this information will be inferred by the model later
         last_updated=int(datetime.now().timestamp())
     )
