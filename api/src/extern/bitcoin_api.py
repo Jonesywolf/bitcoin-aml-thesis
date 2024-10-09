@@ -6,7 +6,7 @@ from datetime import datetime
 from pydantic import ValidationError
 from typing import Tuple
 
-from src.models import WalletData, ConnectedWallets, BitcoinAddressQueryResponse
+from src.models import WalletData, WalletConnectionDetails, ConnectedWallets, BitcoinAddressQueryResponse
 
 # Conversion factor from satoshis to BTC
 SATOSHIS_TO_BTC = 1e-8
@@ -20,10 +20,6 @@ def get_wallet_data_from_api(base58_address: str) -> Tuple[WalletData, Connected
     @return: The WalletData object populated with the data from the API.
     @return: The ConnectedWallets object populated with the connected wallets from the API.
     """
-    api_url = f"https://blockchain.info/rawaddr/{base58_address}"
-    response = requests.get(api_url)
-    response.raise_for_status()  # Raise an exception for HTTP errors
-
     address_data = get_address_data_from_api(base58_address)  
     if address_data is None:
         return None, None
@@ -31,6 +27,7 @@ def get_wallet_data_from_api(base58_address: str) -> Tuple[WalletData, Connected
     wallet_data, connected_wallets = convert_to_wallet_data(address_data)
     return wallet_data, connected_wallets
 
+# TODO: Add pagination for transactions using &offset= and &limit=, note &limit= is capped at 100
 def get_address_data_from_api(base58_address: str) -> BitcoinAddressQueryResponse:
     """
     Get the address data from the Blockchain.com API.
@@ -90,6 +87,8 @@ def convert_to_wallet_data(address_query_response: BitcoinAddressQueryResponse) 
     blocks_btwn_input_txs = []
     blocks_btwn_output_txs = []
     addresses_transacted_with = defaultdict(int) # address -> num_txs
+    inbound_wallets = {}
+    outbound_wallets = {}
     num_addresses_transacted_with = []
     transacted_w_address_total = 0
     
@@ -101,12 +100,19 @@ def convert_to_wallet_data(address_query_response: BitcoinAddressQueryResponse) 
         first_block_appeared_in = min(first_block_appeared_in, tx.block_height)
         last_block_appeared_in = max(last_block_appeared_in, tx.block_height)
         
-        # Update first sent and received block
+        
+        # * Note that a transaction can show up as a sender and receiver and it can show up as an input or
+        # * output more than once
+        counted_this_tx_as_sender = False
+        counted_this_tx_as_receiver = False
         for tx_input in tx.inputs:
             if tx_input.prev_out.addr == address_query_response.address:
-                num_txs_as_sender += 1
-                first_sent_block = min(first_sent_block, tx.block_height)
-                
+                if not counted_this_tx_as_sender:
+                    num_txs_as_sender += 1
+                    first_sent_block = min(first_sent_block, tx.block_height)
+                    blocks_btwn_input_txs.append(tx.block_height)
+                    counted_this_tx_as_sender = True
+                                    
                 # Update sent BTC
                 btc_sent.append(tx_input.prev_out.value)
                 btc_sent_total += tx_input.prev_out.value
@@ -118,26 +124,46 @@ def convert_to_wallet_data(address_query_response: BitcoinAddressQueryResponse) 
                 fees_total += tx.fee
                 fees_min = min(fees_min, tx.fee)
                 fees_max = max(fees_max, tx.fee)
-                blocks_btwn_input_txs.append(tx.block_height)
+                
                 btc_fees_as_share.append(tx.fee / abs(tx.result))
             else:
                 num_addresses_transacted_with_this_tx += 1
                 addresses_transacted_with[tx_input.prev_out.addr] += 1
+                if tx_input.prev_out.addr in outbound_wallets:
+                    outbound_wallets[tx_input.prev_out.addr].num_transactions += 1
+                    outbound_wallets[tx_input.prev_out.addr].amount_transacted += tx_input.prev_out.value * SATOSHIS_TO_BTC
+                else:
+                    outbound_wallets[tx_input.prev_out.addr] = WalletConnectionDetails(
+                        address=tx_input.prev_out.addr,
+                        num_transactions=1,
+                        amount_transacted=tx_input.prev_out.value * SATOSHIS_TO_BTC
+                    )
         
         for tx_output in tx.out:
             if tx_output.addr == address_query_response.address:
-                num_txs_as_receiver += 1
-                first_received_block = min(first_received_block, tx.block_height)
+                if not counted_this_tx_as_receiver:
+                    num_txs_as_receiver += 1
+                    blocks_btwn_output_txs.append(tx.block_height)
+                    first_received_block = min(first_received_block, tx.block_height)
+                    counted_this_tx_as_receiver = True
                 
                 # Update received BTC
                 btc_received.append(tx_output.value)
                 btc_received_total += tx_output.value
                 btc_received_min = min(btc_received_min, tx_output.value)
                 btc_received_max = max(btc_received_max, tx_output.value)
-                blocks_btwn_output_txs.append(tx.block_height)
             else:
                 num_addresses_transacted_with_this_tx += 1
-                addresses_transacted_with[tx_output.addr] += 1  
+                addresses_transacted_with[tx_output.addr] += 1
+                if tx_output.addr in inbound_wallets:
+                    inbound_wallets[tx_output.addr].num_transactions += 1
+                    inbound_wallets[tx_output.addr].amount_transacted += tx_output.value * SATOSHIS_TO_BTC
+                else:
+                    inbound_wallets[tx_output.addr] = WalletConnectionDetails(
+                        address=tx_output.addr,
+                        num_transactions=1,
+                        amount_transacted=tx_output.value * SATOSHIS_TO_BTC
+                    ) 
         
         # Update total BTC transacted
         btc_transacted_total += abs(tx.result)
@@ -306,5 +332,5 @@ def convert_to_wallet_data(address_query_response: BitcoinAddressQueryResponse) 
         last_updated=int(datetime.now().timestamp())
     )
     
-    connected_wallets = ConnectedWallets(connected_wallets=list(addresses_transacted_with.keys()))
+    connected_wallets = ConnectedWallets(inbound_connections=inbound_wallets, outbound_connections=outbound_wallets)
     return wallet_data, connected_wallets

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 class WalletData(BaseModel):
     """
@@ -62,14 +62,21 @@ class WalletData(BaseModel):
     transacted_w_address_median: float  # The median number of addresses transacted with per transaction
     class_inference: int # The class of the wallet as inferred by the model (1: illicit, 2:illicit, 3: unknown)
     last_updated: int  # The unix timestamp of the last update to the wallet data
-    
+ 
+class WalletConnectionDetails(BaseModel):
+    """
+    A model representing details of a connection between wallets.
+    """
+    # TODO: Use and store this data in the database
+    num_transactions: int  # Number of transactions between the wallets
+    amount_transacted: float  # Total amount transacted between the wallets
+
 class ConnectedWallets(BaseModel):
-    # TODO: Want inbound and outbound connections, not just connected wallets
-    # TODO: Might also want to include the number of transactions between the wallets or the amount transacted
     """
     A model representing information about wallets that have transacted with a given wallet.
     """
-    connected_wallets: List[str]  # A list of Bitcoin wallet addresses connected to the wallet
+    inbound_connections: Dict[str, WalletConnectionDetails]  # Wallets that have sent Bitcoin to the given wallet
+    outbound_connections: Dict[str, WalletConnectionDetails]  # Wallets that have received Bitcoin from the given wallet
 
 class PreviousTransactionOutput(BaseModel):
     """

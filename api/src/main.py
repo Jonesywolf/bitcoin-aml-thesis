@@ -1,12 +1,15 @@
 import logging
 
 from fastapi import FastAPI
+import uvicorn
+
+from src.config import LOG_LEVEL
 from src.routes import wallet_data
 from src.routes import connected_wallets
-from src.db.neo4j import lifespan
+from src.shared.state import lifespan
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=LOG_LEVEL.upper())
 logger = logging.getLogger(__name__)
 
 app = FastAPI(lifespan=lifespan)
@@ -15,7 +18,6 @@ app.include_router(wallet_data.router, prefix="/wallet")
 app.include_router(connected_wallets.router, prefix="/connected-wallets")
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 # * When we populate a wallet to the database, we will add its wallet connections too, but leave them unpopulated
