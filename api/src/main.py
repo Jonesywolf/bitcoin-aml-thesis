@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from src.config import LOG_LEVEL
@@ -13,6 +14,20 @@ logging.basicConfig(level=LOG_LEVEL.upper())
 logger = logging.getLogger(__name__)
 
 app = FastAPI(lifespan=lifespan)
+
+# Configure CORS
+origins = [
+    "http://localhost:5173",
+    # Add other origins as needed
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 app.include_router(wallet_data.router, prefix="/wallet")
 app.include_router(connected_wallets.router, prefix="/connected-wallets")
