@@ -1,15 +1,17 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { SigmaContainer, useSigma, useRegisterEvents } from "@react-sigma/core";
-import Graph from "graphology";
-import { useWorkerLayoutForceAtlas2 } from "@react-sigma/layout-forceatlas2";
+import { DirectedGraph } from "graphology";
+import { useWorkerLayoutForce } from "@react-sigma/layout-force";
 import { Coordinates } from "sigma/types";
+import { EdgeArrowProgram } from "sigma/rendering";
+import { EdgeCurvedArrowProgram } from "@sigma/edge-curve";
 
 const GraphComponent = () => {
 	const sigma = useSigma();
 	const containerRef = useRef(null);
 
 	useEffect(() => {
-		const graph = new Graph();
+		const graph = new DirectedGraph();
 		// Add some nodes
 		graph.addNode("n1", {
 			label: "Ella Fitzgerald: 1917",
@@ -22,29 +24,29 @@ const GraphComponent = () => {
 			label: "Frank Sinatra: 1915",
 			size: 25,
 			color: "red",
-			x: 0,
-			y: 0,
+			x: 10,
+			y: 10,
 		});
 		graph.addNode("n3", {
 			label: "Billie Holiday: 1915",
 			size: 25,
 			color: "red",
-			x: 0,
-			y: 0,
+			x: 30,
+			y: 10,
 		});
 		graph.addNode("n4", {
 			label: "Louis Armstrong: 1901",
 			size: 25,
 			color: "yellow",
-			x: 0,
-			y: 0,
+			x: 10,
+			y: 10,
 		});
 		graph.addNode("n5", {
 			label: "Nina Simone : 1933",
 			size: 25,
 			color: "orange",
-			x: 0,
-			y: 0,
+			x: 30,
+			y: 20,
 		});
 		graph.addNode("n6", {
 			label: "Nat King Cole: 1919",
@@ -75,14 +77,14 @@ const GraphComponent = () => {
 			y: 10,
 		});
 
-		graph.addEdge("n1", "n2");
-		graph.addEdge("n1", "n3");
-		graph.addEdge("n1", "n6");
+		graph.addEdge("n1", "n2", { size: 3, label: "60 BTC", type: "curved" });
+		graph.addEdge("n1", "n3", { size: 3, label: "22 BTC", type: "curved" });
+		graph.addEdge("n1", "n6", { size: 3, label: "1 BTC" });
 
-		graph.addEdge("n2", "n1");
-		graph.addEdge("n3", "n1");
-		graph.addEdge("n5", "n8");
-		graph.addEdge("n7", "n9");
+		graph.addEdge("n2", "n1", { size: 3, label: "0.702 BTC", type: "curved" });
+		graph.addEdge("n3", "n1", { size: 3, label: "0.24 BTC", type: "curved" });
+		graph.addEdge("n5", "n8", { size: 3, label: "0.0003 BTC" });
+		graph.addEdge("n7", "n9", { size: 3, label: "0.1 BTC" });
 
 		if (sigma) {
 			sigma.setGraph(graph);
@@ -164,10 +166,8 @@ const GraphEvents = () => {
 };
 
 const Fa2 = () => {
-	const { start, kill } = useWorkerLayoutForceAtlas2({
-		settings: {
-			strongGravityMode: true,
-		},
+	const { start, kill } = useWorkerLayoutForce({
+		settings: {},
 	});
 
 	useEffect(() => {
@@ -184,8 +184,21 @@ const Fa2 = () => {
 };
 
 const GraphWrapper = () => {
+	// Sigma settings
+	const settings = useMemo(
+		() => ({
+			renderEdgeLabels: true,
+			defaultEdgeType: "straight",
+			edgeProgramClasses: {
+				straight: EdgeArrowProgram,
+				curved: EdgeCurvedArrowProgram,
+			},
+		}),
+		[]
+	);
+
 	return (
-		<SigmaContainer>
+		<SigmaContainer settings={settings}>
 			<GraphComponent />
 			<GraphEvents />
 			<Fa2 />
