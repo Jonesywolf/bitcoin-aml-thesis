@@ -3,4 +3,5 @@ import os
 NEO4J_URI = os.getenv("NEO4J_URI", "neo4j://localhost:7687")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO") # or "DEBUG", "WARNING", "ERROR", "CRITICAL"
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")  # or "DEBUG", "WARNING", "ERROR", "CRITICAL"
