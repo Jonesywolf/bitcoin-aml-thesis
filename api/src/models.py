@@ -151,6 +151,15 @@ class ConnectedWallets(BaseModel):
         )
 
 
+class SpendingOutpoint(BaseModel):
+    """
+    Represents an outpoint that spends a transaction output.
+    """
+
+    tx_index: int  # Transaction index
+    n: int  # Index of the output in the transaction
+
+
 class PreviousTransactionOutput(BaseModel):
     """
     Represents the previous output in a transaction input.
@@ -159,7 +168,7 @@ class PreviousTransactionOutput(BaseModel):
     output_type: int = Field(..., alias="type")  # Type of the previous output
     spent: bool  # Indicates if the output has been spent
     value: int  # Value of the previous output in satoshis
-    spending_outpoints: List[dict]  # List of spending outpoints
+    spending_outpoints: List[SpendingOutpoint]  # List of spending outpoints
     n: int  # Index of the output in the transaction
     tx_index: int  # Transaction index
     script: str  # Script of the previous output
@@ -186,7 +195,7 @@ class TransactionOutput(BaseModel):
     output_type: int = Field(..., alias="type")
     spent: bool  # Indicates if the output has been spent
     value: int  # Value of the output in satoshis
-    spending_outpoints: List[dict]  # List of spending outpoints
+    spending_outpoints: List[SpendingOutpoint]  # List of spending outpoints
     n: int  # Index of the output in the transaction
     tx_index: int  # Transaction index
     script: str  # Script of the output
