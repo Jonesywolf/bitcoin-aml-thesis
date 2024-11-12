@@ -172,7 +172,7 @@ class PreviousTransactionOutput(BaseModel):
     n: int  # Index of the output in the transaction
     tx_index: int  # Transaction index
     script: str  # Script of the previous output
-    addr: Optional[str]  # Address associated with the previous output
+    addr: Optional[str] = None  # Address associated with the previous output
 
 
 class TransactionInput(BaseModel):
@@ -199,7 +199,9 @@ class TransactionOutput(BaseModel):
     n: int  # Index of the output in the transaction
     tx_index: int  # Transaction index
     script: str  # Script of the output
-    addr: Optional[str]  # Address associated with the output
+    addr: Optional[str] = (
+        None  # Address associated with the output # ? Should the default be None or an empty string?
+    )
 
 
 class Transaction(BaseModel):

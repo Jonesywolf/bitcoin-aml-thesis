@@ -1,11 +1,18 @@
-import json
 import logging
-import requests
+from pymongo import MongoClient
 from collections import defaultdict
 from datetime import datetime
-from pydantic import ValidationError
-from typing import Tuple
+from typing import Optional, Tuple
 
+from src.extern.api_worker import (
+    BlockchainAPIWorker,
+    get_address_information,
+    get_transaction_range,
+)
+from src.db.mongodb import (
+    add_bitcoin_address_query_response_to_db,
+    get_bitcoin_address_query_response_from_db,
+)
 from src.models import (
     WalletData,
     WalletConnectionDetails,
@@ -18,17 +25,21 @@ SATOSHIS_TO_BTC = 1e-8
 logger = logging.getLogger(__name__)
 
 
-def get_wallet_data_from_api(
+async def get_wallet_data_from_api(
+    api_worker: BlockchainAPIWorker,
+    mongo_client: MongoClient,
     base58_address: str,
 ) -> Tuple[WalletData, ConnectedWallets]:
     """
     Convert the wallet data from the Blockchain.com API to a WalletData object.
 
+    @param api_worker: The Blockchain.com API worker instance.
+    @param mongo_client: The MongoDB client instance.
     @param base58_address: The base58 encoded Bitcoin address to query.
     @return: The WalletData object populated with the data from the API.
     @return: The ConnectedWallets object populated with the connected wallets from the API.
     """
-    address_data = get_address_data_from_api(base58_address)
+    address_data = await get_address_data(api_worker, mongo_client, base58_address)
     if address_data is None:
         return None, None
 
@@ -36,26 +47,68 @@ def get_wallet_data_from_api(
     return wallet_data, connected_wallets
 
 
-# TODO: Add pagination for transactions using &offset= and &limit=, note &limit= is capped at 100
-def get_address_data_from_api(base58_address: str) -> BitcoinAddressQueryResponse:
+async def get_address_data(
+    api_worker: BlockchainAPIWorker,
+    mongo_client: MongoClient,
+    base58_address: str,
+    maximum_transactions: int = 20000,  # TODO: Fiddle with this number
+) -> Optional[BitcoinAddressQueryResponse]:
     """
-    Get the address data from the Blockchain.com API.
+    Get the address data from the Blockchain.com API or the MongoDB cache.
 
+    @param mongo_client: The MongoDB client instance.
     @param base58_address: The base58 encoded Bitcoin address to query.
     @return: The BitcoinAddressQueryResponse object populated with the data from the API.
     """
-    address_data = None
-    response = requests.get(f"https://blockchain.info/rawaddr/{base58_address}")
-    try:
-        address_data = BitcoinAddressQueryResponse.model_validate_json(
-            json.dumps(response.json())
-        )
-    except ValidationError as e:
-        logger.error(
-            f"Error parsing JSON response for BTC address: {base58_address}: {e}"
-        )
-        return None
-    return address_data
+    # Retrieve the address data from the cache if it exists
+    cached_address_data = get_bitcoin_address_query_response_from_db(
+        mongo_client, base58_address
+    )
+    latest_address_data = await get_address_information(api_worker, base58_address)
+
+    # If the address data is not retrieved from the API or the cache is up to date,
+    # return the cached data
+    if latest_address_data is None or (
+        cached_address_data is not None
+        and cached_address_data.n_tx == latest_address_data.n_tx
+    ):
+        logger.info(f"Using cached data for address {base58_address}")
+        return cached_address_data
+    else:
+        # If the number of transactions is greater than 100, the API response is paginated
+        # and the data is incomplete, so make new API calls until all transactions are retrieved
+        if latest_address_data.n_tx > 100:
+            logger.info(f"Address {base58_address} has more than 100 transactions")
+            if latest_address_data.n_tx > maximum_transactions:
+                logger.error(
+                    f"Address {base58_address} has {latest_address_data.n_tx} transactions, which exceeds the maximum of {maximum_transactions}."
+                )
+                return None
+            if cached_address_data is not None:
+                logger.info(
+                    f"Supplementing address transaction data using cache for address {base58_address}"
+                )
+                latest_address_data.txs = cached_address_data.txs
+                address_transactions = await get_transaction_range(
+                    api_worker,
+                    base58_address,
+                    cached_address_data.n_tx,
+                    latest_address_data.n_tx,
+                )
+            else:
+                logger.info(
+                    f"No cache found for address {base58_address}, fetching all transactions"
+                )
+                address_transactions = await get_transaction_range(
+                    api_worker,
+                    base58_address,
+                    100,
+                    latest_address_data.n_tx,
+                )
+            latest_address_data.txs.extend(address_transactions)
+
+        _ = add_bitcoin_address_query_response_to_db(mongo_client, latest_address_data)
+        return latest_address_data
 
 
 def convert_to_wallet_data(
@@ -149,7 +202,9 @@ def convert_to_wallet_data(
                     outbound_wallets[tx_input.prev_out.addr].amount_transacted += (
                         tx_input.prev_out.value * SATOSHIS_TO_BTC
                     )
-                else:
+                elif (
+                    tx_input.prev_out.addr is not None
+                ):  # Some transactions have no address in the API response
                     outbound_wallets[tx_input.prev_out.addr] = WalletConnectionDetails(
                         address=tx_input.prev_out.addr,
                         num_transactions=1,
@@ -177,7 +232,9 @@ def convert_to_wallet_data(
                     inbound_wallets[tx_output.addr].amount_transacted += (
                         tx_output.value * SATOSHIS_TO_BTC
                     )
-                else:
+                elif (
+                    tx_output.addr is not None
+                ):  # Some transactions have no address in the API response
                     inbound_wallets[tx_output.addr] = WalletConnectionDetails(
                         address=tx_output.addr,
                         num_transactions=1,

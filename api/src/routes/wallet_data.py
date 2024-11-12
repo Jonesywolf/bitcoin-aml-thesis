@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException, status
 from src.extern.bitcoin_api import (
     convert_to_wallet_data,
-    get_address_data_from_api,
+    get_address_data,
     get_wallet_data_from_api,
 )
 from src.db.neo4j import (
@@ -29,20 +29,29 @@ async def get_wallet_data(
     # up to date
     if wallet_data is not None and wallet_data.is_populated:
         # Check if the wallet data is outdated
-        latest_wallet_data = get_address_data_from_api(base58_address)
+        latest_wallet_data = await get_address_data(
+            request.app.state.api_worker, request.app.state.mongo_client, base58_address
+        )
+        if latest_wallet_data is None:
+            logger.error(
+                f"Error getting latest wallet data for {base58_address}, returning cached data"
+            )
+            return wallet_data
         if wallet_data.total_txs != latest_wallet_data.n_tx or force_update:
             logger.info(f"Updating wallet data for {base58_address}")
 
             # Perform the required conversion and postprocessing to get the wallet data,
             # no need to make a new API call
-            wallet_data, _ = convert_to_wallet_data(latest_wallet_data)
+            wallet_data, connected_wallets = convert_to_wallet_data(latest_wallet_data)
             # TODO: update the wallet data in the database, and update its class inference and connected wallets
             # update_wallet_data_in_db(request.app.state.neo4j_driver, wallet_data)
             # update_connected_wallets_in_db(request.app.state.neo4j_driver, base58_address, connected_wallets)
         return wallet_data
 
     # If the wallet is not found in the database, use an external API to get the data
-    wallet_data, connected_wallets = get_wallet_data_from_api(base58_address)
+    wallet_data, connected_wallets = await get_wallet_data_from_api(
+        request.app.state.api_worker, request.app.state.mongo_client, base58_address
+    )
     if wallet_data is None:
         # If the wallet is not found in the external API, return a 404 response
         raise HTTPException(

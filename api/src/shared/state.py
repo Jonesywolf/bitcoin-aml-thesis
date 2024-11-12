@@ -2,8 +2,15 @@ import logging
 from contextlib import asynccontextmanager
 from neo4j import GraphDatabase
 from pymongo import MongoClient
+from src.db.mongodb import set_up_database
 from src.extern.api_worker import BlockchainAPIWorker
-from src.config import MONGO_URI, NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
+from src.config import (
+    MONGO_URI,
+    NEO4J_URI,
+    NEO4J_USERNAME,
+    NEO4J_PASSWORD,
+    SETUP_MONGO_DB,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +34,10 @@ async def lifespan(app):
     mongo_client = MongoClient(MONGO_URI)
     logger.info(f"Connected to MongoDB at {MONGO_URI}")
     app.state.mongo_client = mongo_client
+
+    if SETUP_MONGO_DB:
+        set_up_database(mongo_client)
+        logger.info("Set up MongoDB database")
 
     blockchain_api_worker = BlockchainAPIWorker()
     logger.info("Started API worker")
