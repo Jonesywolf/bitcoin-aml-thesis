@@ -23,7 +23,8 @@ class BlockchainAPIWorker:
     """
 
     BASE_URL = "https://blockchain.info/rawaddr/"
-    RATE_LIMIT = 10  # seconds between requests
+    # TODO: Ask Blockchain.com about the rate limit, it might be daily...
+    RATE_LIMIT = 1  # seconds between requests
 
     def __init__(self):
         """
