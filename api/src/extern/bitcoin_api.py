@@ -92,7 +92,9 @@ async def get_address_data(
                 address_transactions = await get_transaction_range(
                     api_worker,
                     base58_address,
-                    cached_address_data.n_tx,
+                    len(
+                        cached_address_data.txs
+                    ),  # Don't use n_tx here, as we may have failed to retrieve all transactions last time
                     latest_address_data.n_tx,
                 )
             else:
