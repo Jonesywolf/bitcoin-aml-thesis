@@ -1,21 +1,18 @@
 import { useState } from "react";
 import { Button, Form, Modal, Spinner } from "react-bootstrap";
-import { WalletData } from "../types/WalletData";
 import logo from "../assets/logo.svg"; // Import the SVG file
+import { useSigma } from "@react-sigma/core";
 
 const InitialModal = ({
 	show,
 	handleClose,
-	setWalletData,
-	setShowOverlay,
 }: {
 	show: boolean;
 	handleClose: () => void;
-	setWalletData: React.Dispatch<React.SetStateAction<WalletData | null>>;
-	setShowOverlay: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
 	const [walletAddress, setWalletAddress] = useState("");
 	const [loading, setLoading] = useState(false);
+	const sigma = useSigma();
 
 	const handleSubmit = async (event: React.FormEvent) => {
 		event.preventDefault();
@@ -35,8 +32,16 @@ const InitialModal = ({
 		// Parse the response
 		const data = await response.json();
 		console.log(data);
-		setWalletData(data);
-		setShowOverlay(true);
+
+		const graph = sigma.getGraph();
+
+		graph.addNode(walletAddress, {
+			size: 25,
+			color: "grey",
+			x: 0,
+			y: 0,
+		});
+
 		handleClose();
 		setLoading(false);
 	};

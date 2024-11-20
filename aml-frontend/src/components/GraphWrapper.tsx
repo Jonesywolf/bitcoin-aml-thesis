@@ -16,6 +16,8 @@ import ForceAtlasLayout from "./ForceAtlasLayout";
 import InitialModal from "./InitialModal";
 import { Button } from "react-bootstrap";
 import { MoonFill, SunFill } from "react-bootstrap-icons";
+import ConnectedWallets from "../types/ConnectedWallets";
+import { Coordinates } from "sigma/types";
 
 const GraphComponent = () => {
 	const sigma = useSigma();
@@ -23,98 +25,6 @@ const GraphComponent = () => {
 
 	useEffect(() => {
 		const graph = new DirectedGraph();
-		// Add some nodes
-		graph.addNode("111112TykSw72ztDN2WJger4cynzWYC5w", {
-			label: "111112TykSw72ztDN2WJger4cynzWYC5w",
-			size: 25,
-			color: "red",
-			x: 0,
-			y: 0,
-		});
-		graph.addNode("n2", {
-			label: "Frank Sinatra: 1915",
-			size: 25,
-			color: "red",
-			x: 10,
-			y: 10,
-		});
-		graph.addNode("n3", {
-			label: "Billie Holiday: 1915",
-			size: 25,
-			color: "red",
-			x: 30,
-			y: 10,
-		});
-		graph.addNode("n4", {
-			label: "Louis Armstrong: 1901",
-			size: 25,
-			color: "yellow",
-			x: 10,
-			y: 10,
-		});
-		graph.addNode("n5", {
-			label: "Nina Simone : 1933",
-			size: 25,
-			color: "orange",
-			x: 30,
-			y: 20,
-		});
-		graph.addNode("n6", {
-			label: "Nat King Cole: 1919",
-			size: 25,
-			color: "red",
-			x: 10,
-			y: 0,
-		});
-		graph.addNode("n7", {
-			label: "Gregory Porter: 1971",
-			size: 25,
-			color: "teal",
-			x: 15,
-			y: 15,
-		});
-		graph.addNode("n8", {
-			label: "Sarah Vaughan: 1924",
-			size: 25,
-			color: "orange",
-			x: 60,
-			y: 60,
-		});
-		graph.addNode("n9", {
-			label: "Michael Buble: 1975",
-			size: 25,
-			color: "teal",
-			x: 10,
-			y: 10,
-		});
-
-		graph.addEdge("111112TykSw72ztDN2WJger4cynzWYC5w", "n2", {
-			size: 3,
-			label: "60 BTC",
-			type: "curved",
-		});
-		graph.addEdge("111112TykSw72ztDN2WJger4cynzWYC5w", "n3", {
-			size: 3,
-			label: "22 BTC",
-			type: "curved",
-		});
-		graph.addEdge("111112TykSw72ztDN2WJger4cynzWYC5w", "n6", {
-			size: 3,
-			label: "1 BTC",
-		});
-
-		graph.addEdge("n2", "111112TykSw72ztDN2WJger4cynzWYC5w", {
-			size: 3,
-			label: "0.702 BTC",
-			type: "curved",
-		});
-		graph.addEdge("n3", "111112TykSw72ztDN2WJger4cynzWYC5w", {
-			size: 3,
-			label: "0.24 BTC",
-			type: "curved",
-		});
-		graph.addEdge("n5", "n8", { size: 3, label: "0.0003 BTC" });
-		graph.addEdge("n7", "n9", { size: 3, label: "0.1 BTC" });
 
 		if (sigma) {
 			sigma.setGraph(graph);
@@ -137,23 +47,128 @@ const GraphEvents = ({
 
 	useEffect(() => {
 		registerEvents({
-			clickNode: async (event) => {
-				console.log("Node clicked", event);
+			clickNode: (event) => {
+				(async () => {
+					const nodeId = event.node;
+					console.log(`Node: ${nodeId} clicked`, event);
+
+					// Send a web request to the backend
+					const response = await fetch(
+						`http://localhost:8000/wallet/${nodeId}`,
+						{
+							method: "GET",
+							headers: {
+								"Content-Type": "application/json",
+							},
+						}
+					);
+
+					// Parse the response
+					const data = await response.json();
+					console.log(data);
+					setWalletData(data);
+					setShowOverlay(true);
+				})();
+			},
+			doubleClickNode: (event) => {
+				(async () => {
+					const nodeId = event.node;
+					console.log(`Node: ${nodeId} double clicked`, event);
+
+					// Send a web request to the backend
+					// TODO: Add error handling and loading state and extract this into a function
+					const response = await fetch(
+						`http://localhost:8000/connected-wallets/${nodeId}`,
+						{
+							method: "GET",
+							headers: {
+								"Content-Type": "application/json",
+							},
+						}
+					);
+
+					// Parse the response
+					const data = await response.json();
+					const connectedWallets: ConnectedWallets = data;
+
+					const graph = sigma.getGraph();
+					for (const connection in connectedWallets.inbound_connections) {
+						if (!graph.hasNode(connection)) {
+							const coords: Coordinates = sigma.viewportToGraph({
+								x: Math.random() * 100,
+								y: Math.random() * 100,
+							});
+							graph.addNode(connection, {
+								size: 25,
+								color: "grey",
+								x: coords.x,
+								y: coords.y,
+							});
+						}
+
+						if (!graph.hasEdge(nodeId, connection)) {
+							const num_transactions =
+								connectedWallets.inbound_connections[connection]
+									.num_transactions;
+							graph.addEdge(nodeId, connection, {
+								size: 3,
+								label:
+									num_transactions === -1
+										? ""
+										: `${num_transactions} transactions`,
+							});
+							// Set the edge type to curved if the nodes are connected in both directions
+							if (graph.hasEdge(connection, nodeId)) {
+								graph.setEdgeAttribute(nodeId, connection, "type", "curved");
+								graph.setEdgeAttribute(nodeId, connection, "type", "curved");
+							}
+						}
+					}
+					for (const connection in connectedWallets.outbound_connections) {
+						if (!graph.hasNode(connection)) {
+							const coords: Coordinates = sigma.viewportToGraph({
+								x: Math.random() * 100,
+								y: Math.random() * 100,
+							});
+							graph.addNode(connection, {
+								size: 25,
+								color: "grey",
+								x: coords.x,
+								y: coords.y,
+							});
+						}
+
+						if (!graph.hasEdge(connection, nodeId)) {
+							const num_transactions =
+								connectedWallets.outbound_connections[connection]
+									.num_transactions;
+							graph.addEdge(connection, nodeId, {
+								size: 3,
+								label:
+									num_transactions === -1
+										? ""
+										: `${num_transactions} transactions`,
+							});
+							// Set the edge type to curved if the nodes are connected in both directions
+							if (graph.hasEdge(nodeId, connection)) {
+								graph.setEdgeAttribute(nodeId, connection, "type", "curved");
+								graph.setEdgeAttribute(nodeId, connection, "type", "curved");
+							}
+						}
+					}
+				})();
+			},
+			enterNode: (event) => {
 				const nodeId = event.node;
-
-				// Send a web request to the backend
-				const response = await fetch(`http://localhost:8000/wallet/${nodeId}`, {
-					method: "GET",
-					headers: {
-						"Content-Type": "application/json",
-					},
-				});
-
-				// Parse the response
-				const data = await response.json();
-				console.log(data);
-				setWalletData(data);
-				setShowOverlay(true);
+				console.log(`Node: ${nodeId} entered`, event);
+				const graph = sigma.getGraph();
+				graph.setNodeAttribute(nodeId, "label", nodeId);
+			},
+			leaveNode: (event) => {
+				const nodeId = event.node;
+				console.log(`Node: ${nodeId} left`, event);
+				const graph = sigma.getGraph();
+				graph.setNodeAttribute(nodeId, "label", "");
 			},
 		});
 	}, [registerEvents, sigma, setWalletData, setShowOverlay]);
@@ -216,12 +231,7 @@ const GraphWrapper = () => {
 				show={showOverlay}
 				setShow={setShowOverlay}
 			/>
-			<InitialModal
-				show={showModal}
-				handleClose={handleCloseModal}
-				setWalletData={setWalletData}
-				setShowOverlay={setShowOverlay}
-			/>
+			<InitialModal show={showModal} handleClose={handleCloseModal} />
 		</SigmaContainer>
 	);
 };
