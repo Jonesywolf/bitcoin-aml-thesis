@@ -17,10 +17,13 @@
     "@react-sigma/layout-forceatlas2": "^4.0.3",
     "@react-sigma/layout-noverlap": "^4.0.3",
     "@sigma/edge-curve": "^3.0.0-beta.16",
+    "bootstrap": "^5.3.3",
     "graphology": "^0.25.4",
     "graphology-layout": "^0.6.1",
     "graphology-types": "^0.24.7",
     "react": "^18.3.1",
+    "react-bootstrap": "^2.10.5",
+    "react-bootstrap-icons": "^1.11.4",
     "react-dom": "^18.3.1",
     "sigma": "^3.0.0-beta.34"
   },

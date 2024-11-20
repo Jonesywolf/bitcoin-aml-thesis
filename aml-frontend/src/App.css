@@ -1,16 +1,8 @@
 body{
-  background-color: white;
+  overflow: hidden;
 }
 
 .App {
-  background-color: lightcyan;
-  border-radius: 15px;
-  padding: 1em;
-}
-
-h1 {
-  margin-bottom: 20px;
-  color: black
 }
 
 .sigma-container {
@@ -18,17 +10,9 @@ h1 {
   height: 100vh;
 }
 
-.overlay {
-  position: absolute; /* or fixed */
-  top: 10px;
-  right: 10px;
-  background-color: rgba(255, 255, 255, 0.8);
-  border: 1px solid #ccc;
-  padding: 10px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
-  color: black;
-  border-radius: 5px;
-  max-height: 100vh;
-  overflow: auto;
+.graph-controls-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: 100;
 }
