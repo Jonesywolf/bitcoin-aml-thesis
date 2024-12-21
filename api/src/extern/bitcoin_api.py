@@ -64,8 +64,7 @@ async def get_address_data(
     cached_address_data = get_bitcoin_address_query_response_from_db(
         mongo_client, base58_address
     )
-    # latest_address_data = await get_address_information(api_worker, base58_address)
-    latest_address_data = None
+    latest_address_data = await get_address_information(api_worker, base58_address)
 
     # If the address data is not retrieved from the API or the cache is up to date,
     # return the cached data
