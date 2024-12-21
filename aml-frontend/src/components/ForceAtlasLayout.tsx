@@ -3,7 +3,9 @@ import { useEffect } from "react";
 
 const ForceAtlasLayout = () => {
 	const { start, kill } = useWorkerLayoutForce({
-		settings: {},
+		settings: {
+			maxMove: 1,
+		},
 	});
 
 	useEffect(() => {
