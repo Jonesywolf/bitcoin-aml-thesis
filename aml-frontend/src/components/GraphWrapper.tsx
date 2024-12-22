@@ -12,12 +12,13 @@ import { EdgeArrowProgram } from "sigma/rendering";
 import { EdgeCurvedArrowProgram } from "@sigma/edge-curve";
 import { WalletData } from "../types/WalletData";
 import WalletInfoOverlay from "./WalletInfoOverlay";
-import ForceAtlasLayout from "./ForceAtlasLayout";
 import InitialModal from "./InitialModal";
 import { Button } from "react-bootstrap";
 import { MoonFill, SunFill } from "react-bootstrap-icons";
-import ConnectedWallets from "../types/ConnectedWallets";
 import { Coordinates } from "sigma/types";
+import { LayoutForceAtlas2Control } from "@react-sigma/layout-forceatlas2";
+import BackendService from "../services/BackendService";
+import ErrorToast from "./ErrorToast";
 
 const GraphComponent = () => {
 	const sigma = useSigma();
@@ -35,12 +36,25 @@ const GraphComponent = () => {
 	return <div ref={containerRef} />;
 };
 
+function randomCoordinatesAroundCenter(center: Coordinates): Coordinates {
+	const radius = 10;
+	const angle = Math.random() * 2 * Math.PI;
+	return {
+		x: center.x + radius * Math.cos(angle),
+		y: center.y + radius * Math.sin(angle),
+	};
+}
+
 const GraphEvents = ({
 	setWalletData,
 	setShowOverlay,
+	setError,
+	setShowToast,
 }: {
 	setWalletData: React.Dispatch<React.SetStateAction<WalletData | null>>;
 	setShowOverlay: React.Dispatch<React.SetStateAction<boolean>>;
+	setError: React.Dispatch<React.SetStateAction<string>>;
+	setShowToast: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
 	const sigma = useSigma();
 	const registerEvents = useRegisterEvents();
@@ -52,22 +66,22 @@ const GraphEvents = ({
 					const nodeId = event.node;
 					console.log(`Node: ${nodeId} clicked`, event);
 
-					// Send a web request to the backend
-					const response = await fetch(
-						`http://localhost:8000/wallet/${nodeId}`,
-						{
-							method: "GET",
-							headers: {
-								"Content-Type": "application/json",
-							},
-						}
-					);
+					try {
+						const response = await BackendService.fetchWalletData(nodeId);
 
-					// Parse the response
-					const data = await response.json();
-					console.log(data);
-					setWalletData(data);
-					setShowOverlay(true);
+						// The wallet data is fetched successfully
+						setWalletData(response);
+						setShowOverlay(true);
+					} catch (error: unknown) {
+						if (error instanceof Error && error.name === "AbortError") {
+							console.error("Wallet data request timed out");
+							setError("Wallet data request timed out");
+						} else {
+							console.error("Wallet data request failed with", error);
+							setError("Wallet data request failed");
+						}
+						setShowToast(true);
+					}
 				})();
 			},
 			doubleClickNode: (event) => {
@@ -75,86 +89,86 @@ const GraphEvents = ({
 					const nodeId = event.node;
 					console.log(`Node: ${nodeId} double clicked`, event);
 
-					// Send a web request to the backend
-					// TODO: Add error handling and loading state and extract this into a function
-					const response = await fetch(
-						`http://localhost:8000/connected-wallets/${nodeId}`,
-						{
-							method: "GET",
-							headers: {
-								"Content-Type": "application/json",
-							},
-						}
-					);
+					try {
+						const connectedWallets = await BackendService.fetchConnectedWallets(
+							nodeId
+						);
+						const graph = sigma.getGraph();
+						const node = graph.getNodeAttributes(nodeId);
+						const nodeCoords: Coordinates = {
+							x: node.x,
+							y: node.y,
+						};
+						console.log(node.x, node.y);
+						for (const connection in connectedWallets.inbound_connections) {
+							if (!graph.hasNode(connection)) {
+								const coords: Coordinates =
+									randomCoordinatesAroundCenter(nodeCoords);
+								graph.addNode(connection, {
+									size: 10,
+									color: "grey",
+									x: coords.x,
+									y: coords.y,
+								});
+							}
 
-					// Parse the response
-					const data = await response.json();
-					const connectedWallets: ConnectedWallets = data;
-
-					const graph = sigma.getGraph();
-					for (const connection in connectedWallets.inbound_connections) {
-						if (!graph.hasNode(connection)) {
-							const coords: Coordinates = sigma.viewportToGraph({
-								x: Math.random() * 100,
-								y: Math.random() * 100,
-							});
-							graph.addNode(connection, {
-								size: 25,
-								color: "grey",
-								x: coords.x,
-								y: coords.y,
-							});
-						}
-
-						if (!graph.hasEdge(nodeId, connection)) {
-							const num_transactions =
-								connectedWallets.inbound_connections[connection]
-									.num_transactions;
-							graph.addEdge(nodeId, connection, {
-								size: 3,
-								label:
-									num_transactions === -1
-										? ""
-										: `${num_transactions} transactions`,
-							});
-							// Set the edge type to curved if the nodes are connected in both directions
-							if (graph.hasEdge(connection, nodeId)) {
-								graph.setEdgeAttribute(nodeId, connection, "type", "curved");
-								graph.setEdgeAttribute(nodeId, connection, "type", "curved");
+							if (!graph.hasEdge(nodeId, connection)) {
+								const num_transactions =
+									connectedWallets.inbound_connections[connection]
+										.num_transactions;
+								graph.addEdge(nodeId, connection, {
+									size: 3,
+									label:
+										num_transactions === -1
+											? ""
+											: `${num_transactions} transactions`,
+								});
+								// Set the edge type to curved if the nodes are connected in both directions
+								if (graph.hasEdge(connection, nodeId)) {
+									graph.setEdgeAttribute(nodeId, connection, "type", "curved");
+									graph.setEdgeAttribute(nodeId, connection, "type", "curved");
+								}
 							}
 						}
-					}
-					for (const connection in connectedWallets.outbound_connections) {
-						if (!graph.hasNode(connection)) {
-							const coords: Coordinates = sigma.viewportToGraph({
-								x: Math.random() * 100,
-								y: Math.random() * 100,
-							});
-							graph.addNode(connection, {
-								size: 25,
-								color: "grey",
-								x: coords.x,
-								y: coords.y,
-							});
-						}
+						for (const connection in connectedWallets.outbound_connections) {
+							if (!graph.hasNode(connection)) {
+								const coords: Coordinates =
+									randomCoordinatesAroundCenter(nodeCoords);
+								graph.addNode(connection, {
+									size: 10,
+									color: "grey",
+									x: coords.x,
+									y: coords.y,
+								});
+							}
 
-						if (!graph.hasEdge(connection, nodeId)) {
-							const num_transactions =
-								connectedWallets.outbound_connections[connection]
-									.num_transactions;
-							graph.addEdge(connection, nodeId, {
-								size: 3,
-								label:
-									num_transactions === -1
-										? ""
-										: `${num_transactions} transactions`,
-							});
-							// Set the edge type to curved if the nodes are connected in both directions
-							if (graph.hasEdge(nodeId, connection)) {
-								graph.setEdgeAttribute(nodeId, connection, "type", "curved");
-								graph.setEdgeAttribute(nodeId, connection, "type", "curved");
+							if (!graph.hasEdge(connection, nodeId)) {
+								const num_transactions =
+									connectedWallets.outbound_connections[connection]
+										.num_transactions;
+								graph.addEdge(connection, nodeId, {
+									size: 3,
+									label:
+										num_transactions === -1
+											? ""
+											: `${num_transactions} transactions`,
+								});
+								// Set the edge type to curved if the nodes are connected in both directions
+								if (graph.hasEdge(nodeId, connection)) {
+									graph.setEdgeAttribute(nodeId, connection, "type", "curved");
+									graph.setEdgeAttribute(nodeId, connection, "type", "curved");
+								}
 							}
 						}
+					} catch (error: unknown) {
+						if (error instanceof Error && error.name === "AbortError") {
+							console.error("Connected wallets request timed out");
+							setError("Connected wallets request timed out");
+						} else {
+							console.error("Connected wallets request failed with", error);
+							setError("Connected wallets request failed");
+						}
+						setShowToast(true);
 					}
 				})();
 			},
@@ -171,7 +185,14 @@ const GraphEvents = ({
 				graph.setNodeAttribute(nodeId, "label", "");
 			},
 		});
-	}, [registerEvents, sigma, setWalletData, setShowOverlay]);
+	}, [
+		registerEvents,
+		sigma,
+		setWalletData,
+		setShowOverlay,
+		setError,
+		setShowToast,
+	]);
 	return null;
 };
 
@@ -180,6 +201,8 @@ const GraphWrapper = () => {
 	const [walletData, setWalletData] = useState<WalletData | null>(null);
 	const [showOverlay, setShowOverlay] = useState(false);
 	const [showModal, setShowModal] = useState(true);
+	const [error, setError] = useState("");
+	const [showToast, setShowToast] = useState(false);
 	const [darkMode, setDarkMode] = useState(false);
 
 	const handleCloseModal = () => setShowModal(false);
@@ -200,12 +223,23 @@ const GraphWrapper = () => {
 	return (
 		<SigmaContainer settings={settings}>
 			<GraphComponent />
+			// TODO: Customize the controls:
+			https://sim51.github.io/react-sigma/docs/example/controls#custom-render-for-controls
 			<ControlsContainer
 				position={"bottom-left"}
 				className="graph-controls-container"
 			>
 				<ZoomControl />
 				<FullScreenControl />
+				<LayoutForceAtlas2Control
+					settings={{
+						settings: {
+							strongGravityMode: true,
+							slowDown: 10,
+							scalingRatio: 2,
+						},
+					}}
+				/>
 				<Button
 					variant="dark"
 					className="px-3 w-100 border-0 btn btn-dark"
@@ -224,12 +258,19 @@ const GraphWrapper = () => {
 			<GraphEvents
 				setWalletData={setWalletData}
 				setShowOverlay={setShowOverlay}
+				setError={setError}
+				setShowToast={setShowToast}
 			/>
-			<ForceAtlasLayout />
 			<WalletInfoOverlay
 				walletData={walletData}
 				show={showOverlay}
 				setShow={setShowOverlay}
+			/>
+			<ErrorToast
+				showToast={showToast}
+				setShowToast={setShowToast}
+				errorTitle="Error:"
+				error={error}
 			/>
 			<InitialModal show={showModal} handleClose={handleCloseModal} />
 		</SigmaContainer>

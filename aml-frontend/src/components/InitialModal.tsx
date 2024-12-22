@@ -1,16 +1,9 @@
 import { useState } from "react";
-import {
-	Button,
-	Form,
-	Modal,
-	Spinner,
-	Toast,
-	ToastContainer,
-} from "react-bootstrap";
+import { Button, Form, Modal, Spinner } from "react-bootstrap";
 import logo from "../assets/logo.svg"; // Import the SVG file
 import { useSigma } from "@react-sigma/core";
-import Config from "../config/Config"; // Import the configuration class
-import { XCircleFill } from "react-bootstrap-icons";
+import BackendService from "../services/BackendService";
+import ErrorToast from "./ErrorToast";
 
 const InitialModal = ({
 	show,
@@ -29,31 +22,14 @@ const InitialModal = ({
 		event.preventDefault();
 		setLoading(true);
 
-		// TODO: Extract this code into a backend client class
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 seconds timeout
-
 		try {
-			// Send a web request to the backend
-			const response = await fetch(
-				`${Config.getBackendBaseUrl()}/wallet/${walletAddress}`,
-				{
-					method: "GET",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					signal: controller.signal,
-				}
-			);
-
-			// Parse the response
-			const data = await response.json();
-			console.log(data);
+			const response = await BackendService.fetchWalletData(walletAddress);
+			console.log(`Class Inference: ${response.class_inference}`);
 
 			const graph = sigma.getGraph();
 			graph.addNode(walletAddress, {
-				size: 25,
-				color: "grey",
+				size: 10,
+				color: "grey", //  TODO: Change this to a different color based on the AI prediction
 				x: 0,
 				y: 0,
 			});
@@ -68,13 +44,7 @@ const InitialModal = ({
 				setError("Request failed");
 			}
 			setShowToast(true);
-			// Clear the error message after 3 seconds
-			setTimeout(() => {
-				setShowToast(false);
-				setError("");
-			}, 3000);
 		} finally {
-			clearTimeout(timeoutId);
 			setLoading(false);
 		}
 	};
@@ -129,21 +99,12 @@ const InitialModal = ({
 					</Form>
 				</Modal.Body>
 			</Modal>
-			<ToastContainer position="bottom-center">
-				<Toast
-					show={showToast}
-					onClose={() => setShowToast(false)}
-					bg="danger"
-					delay={3000}
-					autohide
-				>
-					<Toast.Body className="text-white d-flex align-items-center">
-						<XCircleFill className="me-2" />
-						<strong className="me-1">Error Sending Request: </strong>
-						{error}
-					</Toast.Body>
-				</Toast>
-			</ToastContainer>
+			<ErrorToast
+				showToast={showToast}
+				setShowToast={setShowToast}
+				errorTitle="Error Sending Request:"
+				error={error}
+			/>
 		</>
 	);
 };
