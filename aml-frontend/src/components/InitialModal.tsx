@@ -4,6 +4,7 @@ import logo from "../assets/logo.svg"; // Import the SVG file
 import { useSigma } from "@react-sigma/core";
 import BackendService from "../services/BackendService";
 import ErrorToast from "./ErrorToast";
+import { WalletDataCache } from "../services/WalletDataCache";
 
 const InitialModal = ({
 	show,
@@ -18,11 +19,17 @@ const InitialModal = ({
 	const [showToast, setShowToast] = useState(false);
 	const sigma = useSigma();
 
+	// TODO: Retrieve the initial wallet address from the cache if it exists then allow the user to proceed using that address
+	// Requires caching the graph data so it can be retrieved later
+
 	const handleSubmit = async (event: React.FormEvent) => {
 		event.preventDefault();
 		setLoading(true);
 
 		try {
+			// Set up the cache
+			WalletDataCache.initWithInitialWalletAddress(walletAddress);
+
 			const response = await BackendService.fetchWalletData(walletAddress);
 			console.log(`Class Inference: ${response.class_inference}`);
 

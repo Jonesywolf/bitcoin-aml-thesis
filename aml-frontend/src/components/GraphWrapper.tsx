@@ -67,7 +67,9 @@ const GraphEvents = ({
 					console.log(`Node: ${nodeId} clicked`, event);
 
 					try {
-						const response = await BackendService.fetchWalletData(nodeId);
+						const response = await BackendService.fetchWalletDataWithCache(
+							nodeId
+						);
 
 						// The wallet data is fetched successfully
 						setWalletData(response);
