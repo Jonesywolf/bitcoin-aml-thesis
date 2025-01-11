@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, HTTPException, status
+from src.ml.random_forest import infer_wallet_data_class
 from src.extern.bitcoin_api import (
     convert_to_wallet_data,
     get_address_data,
@@ -36,6 +37,11 @@ async def get_wallet_data(
             logger.error(
                 f"Error getting latest wallet data for {base58_address}, returning cached data"
             )
+            if wallet_data.class_inference == -1:
+                # Compute the inference for the wallet data
+                wallet_data = infer_wallet_data_class(
+                    request.app.state.ort_session, wallet_data
+                )
             return wallet_data
         if wallet_data.total_txs != latest_wallet_data.n_tx or force_update:
             logger.info(f"Updating wallet data for {base58_address}")
@@ -43,7 +49,13 @@ async def get_wallet_data(
             # Perform the required conversion and postprocessing to get the wallet data,
             # no need to make a new API call
             wallet_data, connected_wallets = convert_to_wallet_data(latest_wallet_data)
-            # TODO: update the wallet data in the database, and update its class inference and connected wallets
+
+            # Compute the inference for the wallet data
+            wallet_data = infer_wallet_data_class(
+                request.app.state.ort_session, wallet_data
+            )
+
+            # TODO: update the wallet data and connected wallets in the database
             # update_wallet_data_in_db(request.app.state.neo4j_driver, wallet_data)
             # update_connected_wallets_in_db(request.app.state.neo4j_driver, base58_address, connected_wallets)
         return wallet_data
@@ -65,6 +77,12 @@ async def get_wallet_data(
     else:
         # If the wallet is found in the external API, infer its class, save it to the database,
         # query the connections while you're at it and those to the database too
+
+        # Compute the inference for the wallet data
+        wallet_data = infer_wallet_data_class(
+            request.app.state.ort_session, wallet_data
+        )
+
         # TODO: Add the wallet data to the database
         # add_wallet_data_to_db(request.app.state.neo4j_driver, wallet_data)
         # TODO: Add the connected wallets to the database

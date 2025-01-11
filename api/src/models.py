@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
+import numpy as np
 
 
 class WalletData(BaseModel):
@@ -114,9 +115,53 @@ class WalletData(BaseModel):
     transacted_w_address_median: (
         float  # The median number of addresses transacted with per transaction
     )
-    class_inference: int  # The class of the wallet as inferred by the model (1: illicit, 2:illicit, 3: unknown)
+    class_inference: (
+        int  # The class of the wallet as inferred by the model (0: licit, 1:illicit)
+    )
     last_updated: int  # The unix timestamp of the last update to the wallet data
     is_populated: bool  # Indicates if the wallet data is fully populated or just a stub created by connected wallets
+
+    def to_ml_model_input(self):
+        """
+        Convert the wallet data object to a numpy array of its values, ignoring the address.
+        """
+
+        # Selected Features for the model (in order):
+        # ['btc_transacted_max', 'blocks_btwn_txs_min', 'fees_min', 'first_block_appeared_in', 'btc_transacted_mean', 'btc_transacted_median', 'fees_median', 'blocks_btwn_input_txs_total', 'blocks_btwn_txs_max', 'transacted_w_address_total', 'fees_total', 'fees_as_share_median', 'btc_transacted_min', 'fees_as_share_min', 'fees_as_share_mean', 'transacted_w_address_max', 'first_sent_block', 'lifetime_in_blocks', 'num_txs_as_sender', 'fees_as_share_max', 'transacted_w_address_mean', 'first_received_block', 'num_txs_as_receiver', 'fees_max', 'blocks_btwn_txs_total', 'transacted_w_address_median', 'fees_as_share_total', 'blocks_btwn_txs_mean', 'last_block_appeared_in', 'fees_mean']
+        values = [
+            self.btc_transacted_max,
+            self.blocks_btwn_txs_min,
+            self.fees_min,
+            self.first_block_appeared_in,
+            self.btc_transacted_mean,
+            self.btc_transacted_median,
+            self.fees_median,
+            self.blocks_btwn_input_txs_total,
+            self.blocks_btwn_txs_max,
+            self.transacted_w_address_total,
+            self.fees_total,
+            self.fees_as_share_median,
+            self.btc_transacted_min,
+            self.fees_as_share_min,
+            self.fees_as_share_mean,
+            self.transacted_w_address_max,
+            self.first_sent_block,
+            self.lifetime_in_blocks,
+            self.num_txs_as_sender,
+            self.fees_as_share_max,
+            self.transacted_w_address_mean,
+            self.first_received_block,
+            self.num_txs_as_receiver,
+            self.fees_max,
+            self.blocks_btwn_txs_total,
+            self.transacted_w_address_median,
+            self.fees_as_share_total,
+            self.blocks_btwn_txs_mean,
+            self.last_block_appeared_in,
+            self.fees_mean,
+        ]
+
+        return np.array(values)
 
 
 class WalletConnectionDetails(BaseModel):

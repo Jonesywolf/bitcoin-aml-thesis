@@ -1,7 +1,10 @@
 import logging
+
 from contextlib import asynccontextmanager
 from neo4j import GraphDatabase
 from pymongo import MongoClient
+import onnxruntime
+
 from src.db.mongodb import set_up_database
 from src.extern.api_worker import BlockchainAPIWorker
 from src.config import (
@@ -39,6 +42,12 @@ async def lifespan(app):
         set_up_database(mongo_client)
         logger.info("Set up MongoDB database")
 
+    # Load the random forest model from the onnx file
+    # ? Should the file path be hardcoded?
+    ort_session = onnxruntime.InferenceSession("res/random_forest_model.onnx")
+    logger.info("Loaded random forest model")
+    app.state.ort_session = ort_session
+
     blockchain_api_worker = BlockchainAPIWorker()
     logger.info("Started API worker")
     app.state.api_worker = blockchain_api_worker
@@ -50,6 +59,10 @@ async def lifespan(app):
 
     mongo_client.close()
     logger.info("Disconnected from MongoDB")
+
+    # ? Is this necessary?
+    app.state.ort_session = None
+    logger.info("Cleaned up random forest model session")
 
     await blockchain_api_worker.close()
     logger.info("Stopped API worker")
