@@ -10,7 +10,7 @@ import {
 import { DirectedGraph } from "graphology";
 import { EdgeArrowProgram } from "sigma/rendering";
 import { EdgeCurvedArrowProgram } from "@sigma/edge-curve";
-import { WalletData } from "../types/WalletData";
+import { getNodeColor, WalletData } from "../types/WalletData";
 import WalletInfoOverlay from "./WalletInfoOverlay";
 import InitialModal from "./InitialModal";
 import { Button } from "react-bootstrap";
@@ -73,6 +73,11 @@ const GraphEvents = ({
 
 						// The wallet data is fetched successfully
 						setWalletData(response);
+
+						const graph = sigma.getGraph();
+						const nodeColor = getNodeColor(response);
+						graph.setNodeAttribute(nodeId, "color", nodeColor);
+
 						setShowOverlay(true);
 					} catch (error: unknown) {
 						if (error instanceof Error && error.name === "AbortError") {

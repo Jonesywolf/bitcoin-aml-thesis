@@ -5,6 +5,7 @@ import { useSigma } from "@react-sigma/core";
 import BackendService from "../services/BackendService";
 import ErrorToast from "./ErrorToast";
 import { WalletDataCache } from "../services/WalletDataCache";
+import { getNodeColor } from "../types/WalletData";
 
 const InitialModal = ({
 	show,
@@ -31,12 +32,13 @@ const InitialModal = ({
 			WalletDataCache.initWithInitialWalletAddress(walletAddress);
 
 			const response = await BackendService.fetchWalletData(walletAddress);
-			console.log(`Class Inference: ${response.class_inference}`);
+
+			const nodeColor = getNodeColor(response);
 
 			const graph = sigma.getGraph();
 			graph.addNode(walletAddress, {
 				size: 10,
-				color: "grey", //  TODO: Change this to a different color based on the AI prediction
+				color: nodeColor,
 				x: 0,
 				y: 0,
 			});

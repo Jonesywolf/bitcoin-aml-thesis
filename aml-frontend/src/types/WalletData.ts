@@ -57,3 +57,20 @@ export interface WalletData {
 	transacted_w_address_min: number;
 	transacted_w_address_total: number;
 }
+
+/**
+ * Determines the color of a node based on the class inference of the wallet data.
+ *
+ * @param walletData - The wallet data containing the class inference.
+ * @returns The color of the node as a string. Returns "green" if class_inference is 0 (licit),
+ *          "red" if class_inference is 1 (illicit), and "grey" for any other value (often -1 if unset).
+ */
+export function getNodeColor(walletData: WalletData): string {
+	if (walletData.class_inference == 0) {
+		return "green";
+	} else if (walletData.class_inference == 1) {
+		return "red";
+	} else {
+		return "grey";
+	}
+}
