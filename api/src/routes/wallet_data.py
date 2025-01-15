@@ -40,7 +40,7 @@ async def get_wallet_data(
             if wallet_data.class_inference == -1:
                 # Compute the inference for the wallet data
                 wallet_data = infer_wallet_data_class(
-                    request.app.state.ort_session, wallet_data
+                    request.app.state.ml_session, wallet_data
                 )
             return wallet_data
         if wallet_data.total_txs != latest_wallet_data.n_tx or force_update:
@@ -52,7 +52,7 @@ async def get_wallet_data(
 
             # Compute the inference for the wallet data
             wallet_data = infer_wallet_data_class(
-                request.app.state.ort_session, wallet_data
+                request.app.state.ml_session, wallet_data
             )
 
             # TODO: update the wallet data and connected wallets in the database
@@ -79,9 +79,7 @@ async def get_wallet_data(
         # query the connections while you're at it and those to the database too
 
         # Compute the inference for the wallet data
-        wallet_data = infer_wallet_data_class(
-            request.app.state.ort_session, wallet_data
-        )
+        wallet_data = infer_wallet_data_class(request.app.state.ml_session, wallet_data)
 
         # TODO: Add the wallet data to the database
         # add_wallet_data_to_db(request.app.state.neo4j_driver, wallet_data)

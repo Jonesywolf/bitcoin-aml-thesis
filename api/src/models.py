@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 
 
 class WalletData(BaseModel):
@@ -121,44 +122,107 @@ class WalletData(BaseModel):
     last_updated: int  # The unix timestamp of the last update to the wallet data
     is_populated: bool  # Indicates if the wallet data is fully populated or just a stub created by connected wallets
 
-    def to_ml_model_input(self):
+    def to_ml_model_input(self, min_max_scalers: Dict[str, MinMaxScaler]) -> np.ndarray:
         """
         Convert the wallet data object to a numpy array of its values, ignoring the address.
+
+        Parameters:
+        - min_max_scalers: The MinMax scalers used to preprocess the input data, indexed by feature name
         """
 
         # Selected Features for the model (in order):
         # ['btc_transacted_max', 'blocks_btwn_txs_min', 'fees_min', 'first_block_appeared_in', 'btc_transacted_mean', 'btc_transacted_median', 'fees_median', 'blocks_btwn_input_txs_total', 'blocks_btwn_txs_max', 'transacted_w_address_total', 'fees_total', 'fees_as_share_median', 'btc_transacted_min', 'fees_as_share_min', 'fees_as_share_mean', 'transacted_w_address_max', 'first_sent_block', 'lifetime_in_blocks', 'num_txs_as_sender', 'fees_as_share_max', 'transacted_w_address_mean', 'first_received_block', 'num_txs_as_receiver', 'fees_max', 'blocks_btwn_txs_total', 'transacted_w_address_median', 'fees_as_share_total', 'blocks_btwn_txs_mean', 'last_block_appeared_in', 'fees_mean']
         values = [
-            self.btc_transacted_max,
-            self.blocks_btwn_txs_min,
-            self.fees_min,
-            self.first_block_appeared_in,
-            self.btc_transacted_mean,
-            self.btc_transacted_median,
-            self.fees_median,
-            self.blocks_btwn_input_txs_total,
-            self.blocks_btwn_txs_max,
-            self.transacted_w_address_total,
-            self.fees_total,
-            self.fees_as_share_median,
-            self.btc_transacted_min,
-            self.fees_as_share_min,
-            self.fees_as_share_mean,
-            self.transacted_w_address_max,
-            self.first_sent_block,
-            self.lifetime_in_blocks,
-            self.num_txs_as_sender,
-            self.fees_as_share_max,
-            self.transacted_w_address_mean,
-            self.first_received_block,
-            self.num_txs_as_receiver,
-            self.fees_max,
-            self.blocks_btwn_txs_total,
-            self.transacted_w_address_median,
-            self.fees_as_share_total,
-            self.blocks_btwn_txs_mean,
-            self.last_block_appeared_in,
-            self.fees_mean,
+            min_max_scalers["btc_transacted_max"].transform(
+                np.array([[self.btc_transacted_max]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["blocks_btwn_txs_min"].transform(
+                np.array([[self.blocks_btwn_txs_min]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["fees_min"].transform(
+                np.array([[self.fees_min]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["first_block_appeared_in"].transform(
+                np.array([[self.first_block_appeared_in]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["btc_transacted_mean"].transform(
+                np.array([[self.btc_transacted_mean]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["btc_transacted_median"].transform(
+                np.array([[self.btc_transacted_median]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["fees_median"].transform(
+                np.array([[self.fees_median]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["blocks_btwn_input_txs_total"].transform(
+                np.array([[self.blocks_btwn_input_txs_total]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["blocks_btwn_txs_max"].transform(
+                np.array([[self.blocks_btwn_txs_max]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["transacted_w_address_total"].transform(
+                np.array([[self.transacted_w_address_total]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["fees_total"].transform(
+                np.array([[self.fees_total]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["fees_as_share_median"].transform(
+                np.array([[self.fees_as_share_median]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["btc_transacted_min"].transform(
+                np.array([[self.btc_transacted_min]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["fees_as_share_min"].transform(
+                np.array([[self.fees_as_share_min]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["fees_as_share_mean"].transform(
+                np.array([[self.fees_as_share_mean]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["transacted_w_address_max"].transform(
+                np.array([[self.transacted_w_address_max]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["first_sent_block"].transform(
+                np.array([[self.first_sent_block]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["lifetime_in_blocks"].transform(
+                np.array([[self.lifetime_in_blocks]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["num_txs_as_sender"].transform(
+                np.array([[self.num_txs_as_sender]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["fees_as_share_max"].transform(
+                np.array([[self.fees_as_share_max]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["transacted_w_address_mean"].transform(
+                np.array([[self.transacted_w_address_mean]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["first_received_block"].transform(
+                np.array([[self.first_received_block]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["num_txs_as_receiver"].transform(
+                np.array([[self.num_txs_as_receiver]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["fees_max"].transform(
+                np.array([[self.fees_max]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["blocks_btwn_txs_total"].transform(
+                np.array([[self.blocks_btwn_txs_total]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["transacted_w_address_median"].transform(
+                np.array([[self.transacted_w_address_median]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["fees_as_share_total"].transform(
+                np.array([[self.fees_as_share_total]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["blocks_btwn_txs_mean"].transform(
+                np.array([[self.blocks_btwn_txs_mean]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["last_block_appeared_in"].transform(
+                np.array([[self.last_block_appeared_in]]).reshape(-1, 1)
+            )[0][0],
+            min_max_scalers["fees_mean"].transform(
+                np.array([[self.fees_mean]]).reshape(-1, 1)
+            )[0][0],
         ]
 
         return np.array(values)
