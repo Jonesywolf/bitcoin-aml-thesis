@@ -8,7 +8,7 @@ import onnxruntime
 
 from src.shared.ml_session import MLSession
 from src.db.mongodb import set_up_database
-from src.extern.api_worker import BlockchainAPIWorker
+from src.extern.api_worker import BlockstreamAPIWorker
 from src.config import (
     MONGO_URI,
     NEO4J_URI,
@@ -54,7 +54,7 @@ async def lifespan(app):
 
     app.state.ml_session = MLSession(min_max_scalers, ort_session)
 
-    blockchain_api_worker = BlockchainAPIWorker()
+    blockchain_api_worker = BlockstreamAPIWorker()
     logger.info("Started API worker")
     app.state.api_worker = blockchain_api_worker
 

@@ -55,12 +55,12 @@ class WalletData(BaseModel):
     fees_mean: float  # The mean transaction fee paid per transaction
     fees_median: float  # The median transaction fee paid per transaction
     fees_as_share_total: (
-        float  # The total transaction fees as a share of the total amount transacted
+        float  # The total transaction fees as a share of the total amount sent
     )
-    fees_as_share_min: float  # The minimum transaction fee as a share of the amount transacted in a single transaction
-    fees_as_share_max: float  # The maximum transaction fee as a share of the amount transacted in a single transaction
-    fees_as_share_mean: float  # The mean transaction fee as a share of the amount transacted per transaction
-    fees_as_share_median: float  # The median transaction fee as a share of the amount transacted per transaction
+    fees_as_share_min: float  # The minimum transaction fee as a share of the amount sent in a single transaction
+    fees_as_share_max: float  # The maximum transaction fee as a share of the amount sent in a single transaction
+    fees_as_share_mean: float  # The mean transaction fee as a share of the amount sent in a single transaction
+    fees_as_share_median: float  # The median transaction fee as a share of the amount sent in a single transaction
     blocks_btwn_txs_total: (
         float  # The total number of blocks between transactions involving this wallet
     )
@@ -260,94 +260,125 @@ class ConnectedWallets(BaseModel):
         )
 
 
-class SpendingOutpoint(BaseModel):
+class TransactionOutput(BaseModel):
     """
-    Represents an outpoint that spends a transaction output.
-    """
-
-    tx_index: int  # Transaction index
-    n: int  # Index of the output in the transaction
-
-
-class PreviousTransactionOutput(BaseModel):
-    """
-    Represents the previous output in a transaction input.
+    Represents an output in a Bitcoin transaction.
     """
 
-    output_type: int = Field(..., alias="type")  # Type of the previous output
-    spent: bool  # Indicates if the output has been spent
-    value: int  # Value of the previous output in satoshis
-    spending_outpoints: List[SpendingOutpoint]  # List of spending outpoints
-    n: int  # Index of the output in the transaction
-    tx_index: int  # Transaction index
-    script: str  # Script of the previous output
-    addr: Optional[str] = None  # Address associated with the previous output
+    scriptpubkey: str  # Script of the output
+    scriptpubkey_asm: str  # ASM representation of the script
+    scriptpubkey_type: str  # Type of the script (e.g., p2pkh, p2wsh)
+    scriptpubkey_address: Optional[str] = None  # Associated Bitcoin address
+    value: int  # Value of the output in satoshis
 
 
 class TransactionInput(BaseModel):
     """
-    Represents an input in a transaction.
+    Represents an input in a Bitcoin transaction.
     """
 
-    sequence: int  # Sequence number of the input
-    witness: str  # Witness data for the input
-    script: str  # Script of the input
-    index: int  # Index of the input in the transaction
-    prev_out: PreviousTransactionOutput  # Previous output associated with the input
+    txid: str  # Transaction ID of the previous transaction
+    vout: int  # Index of the output being spent
+    prevout: TransactionOutput  # Previous output details
+    scriptsig: str  # ScriptSig used to unlock the output
+    scriptsig_asm: str  # ASM representation of the scriptsig
+    is_coinbase: bool  # Indicates if this input is a coinbase transaction
+    sequence: int  # Sequence number
+    # * Missing inner_redeemscript_asm, inner_witness_asm, and witness[] fields
 
 
-class TransactionOutput(BaseModel):
+class TransactionStatus(BaseModel):
     """
-    Represents an output in a transaction.
+    Represents the confirmation status of a transaction.
     """
 
-    output_type: int = Field(..., alias="type")
-    spent: bool  # Indicates if the output has been spent
-    value: int  # Value of the output in satoshis
-    spending_outpoints: List[SpendingOutpoint]  # List of spending outpoints
-    n: int  # Index of the output in the transaction
-    tx_index: int  # Transaction index
-    script: str  # Script of the output
-    addr: Optional[str] = (
-        None  # Address associated with the output # ? Should the default be None or an empty string?
+    confirmed: bool  # Whether the transaction is confirmed
+    block_height: Optional[int] = (
+        0  # Block height at which the transaction was confirmed
+    )
+    block_hash: Optional[str] = (
+        None  # Hash of the block in which the transaction was confirmed
+    )
+    block_time: Optional[int] = (
+        0  # Time at which the block was confirmed (UNIX timestamp)
     )
 
 
 class Transaction(BaseModel):
     """
-    Represents a transaction in the blockchain.
+    Represents a Bitcoin transaction.
     """
 
-    hash: str  # Hash of the transaction
-    ver: int  # Version of the transaction
-    vin_sz: int  # Number of inputs in the transaction
-    vout_sz: int  # Number of outputs in the transaction
+    address: Optional[str] = (
+        None  # The Bitcoin address queried, not in the API response, hence optional, necessary for MongoDB storage
+    )
+    txid: str  # Transaction ID
+    version: int  # Transaction version
+    locktime: int  # Lock time of the transaction
+    vin: List[TransactionInput]  # List of transaction inputs
+    vout: List[TransactionOutput]  # List of transaction outputs
     size: int  # Size of the transaction in bytes
-    weight: int  # Weight of the transaction
-    fee: int  # Fee for the transaction in satoshis
-    relayed_by: str  # IP address of the node that relayed the transaction
-    lock_time: int  # Lock time of the transaction
-    tx_index: int  # Transaction index
-    double_spend: bool  # Indicates if the transaction is a double spend
-    time: int  # Timestamp of the transaction
-    block_index: int  # Block index containing the transaction
-    block_height: int  # Block height containing the transaction
-    inputs: List[TransactionInput]  # List of inputs in the transaction
-    out: List[TransactionOutput]  # List of outputs in the transaction
-    result: int  # Result of the transaction
-    balance: int  # Balance after the transaction
+    weight: int  # Weight of the transaction (used in SegWit)
+    fee: int  # Transaction fee in satoshis
+    status: TransactionStatus  # Transaction status (confirmed/unconfirmed)
+
+
+class ChainStats(BaseModel):
+    """
+    Represents on-chain transaction statistics for a Bitcoin address.
+
+    These statistics include details about funded and spent transaction outputs,
+    as well as the total number of transactions associated with the address.
+    """
+
+    funded_txo_count: int  # Number of transaction outputs that funded the address
+    funded_txo_sum: int  # Total value of funded transaction outputs in satoshis
+    spent_txo_count: int  # Number of transaction outputs that were spent
+    spent_txo_sum: int  # Total value of spent transaction outputs in satoshis
+    tx_count: int  # Total number of transactions involving the address
+
+
+class MempoolStats(BaseModel):
+    """
+    Represents mempool transaction statistics for a Bitcoin address.
+
+    These statistics include transaction outputs that are in the mempool but
+    have not yet been confirmed on-chain.
+    """
+
+    funded_txo_count: (
+        int  # Number of transaction outputs funding the address in the mempool
+    )
+    funded_txo_sum: (
+        int  # Total value of funded transaction outputs in the mempool (satoshis)
+    )
+    spent_txo_count: (
+        int  # Number of transaction outputs spent from the address in the mempool
+    )
+    spent_txo_sum: (
+        int  # Total value of spent transaction outputs in the mempool (satoshis)
+    )
+    tx_count: int  # Total number of transactions in the mempool involving the address
 
 
 class BitcoinAddressQueryResponse(BaseModel):
     """
-    Represents the response from a Blockchain.com API bitcoin address query.
+    Represents the response from a Blockstream API bitcoin address query.
+
+    This includes details about the Bitcoin address, its on-chain statistics,
+    and transactions that are currently in the mempool.
     """
 
-    hash160: str  # Hash160 of the address
-    address: str  # Address string
-    n_tx: int  # Number of transactions associated with the address
-    n_unredeemed: int  # Number of unredeemed outputs
-    total_received: int  # Total amount received by the address in satoshis
-    total_sent: int  # Total amount sent by the address in satoshis
-    final_balance: int  # Final balance of the address in satoshis
-    txs: List[Transaction]  # List of transactions associated with the address
+    address: str  # The Bitcoin address queried
+    chain_stats: ChainStats  # On-chain transaction statistics
+    mempool_stats: MempoolStats  # Mempool transaction statistics
+    # * Not in the API response, but we can add it here for convenience:
+    transactions: Optional[List[Transaction]] = (
+        []
+    )  # List of transactions involving the address
+    last_seen_txid: Optional[str] = (
+        None  # The last transaction ID seen in the request, used for pagination
+    )
+    # We store the last seen txid to fetch the next page of transactions and
+    # because we don't know the tie breaking rule when a wallet sends multiple
+    # transactions in the same block

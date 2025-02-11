@@ -25,6 +25,67 @@ def get_wallet_data_from_db(
         wallet_data_record = result.single()
         if wallet_data_record is not None:
             wallet_data_record = wallet_data_record["w"]
+            if wallet_data_record["is_populated"] == False:
+                return WalletData(
+                    address=wallet_data_record["address"],
+                    num_txs_as_sender=0,
+                    num_txs_as_receiver=0,
+                    first_block_appeared_in=0,
+                    last_block_appeared_in=0,
+                    lifetime_in_blocks=0,
+                    total_txs=0,
+                    first_sent_block=0,
+                    first_received_block=0,
+                    btc_transacted_total=0,
+                    btc_transacted_min=0,
+                    btc_transacted_max=0,
+                    btc_transacted_mean=0,
+                    btc_transacted_median=0,
+                    btc_sent_total=0,
+                    btc_sent_min=0,
+                    btc_sent_max=0,
+                    btc_sent_mean=0,
+                    btc_sent_median=0,
+                    btc_received_total=0,
+                    btc_received_min=0,
+                    btc_received_max=0,
+                    btc_received_mean=0,
+                    btc_received_median=0,
+                    fees_total=0,
+                    fees_min=0,
+                    fees_max=0,
+                    fees_mean=0,
+                    fees_median=0,
+                    fees_as_share_total=0,
+                    fees_as_share_min=0,
+                    fees_as_share_max=0,
+                    fees_as_share_mean=0,
+                    fees_as_share_median=0,
+                    blocks_btwn_txs_total=0,
+                    blocks_btwn_txs_min=0,
+                    blocks_btwn_txs_max=0,
+                    blocks_btwn_txs_mean=0,
+                    blocks_btwn_txs_median=0,
+                    blocks_btwn_input_txs_total=0,
+                    blocks_btwn_input_txs_min=0,
+                    blocks_btwn_input_txs_max=0,
+                    blocks_btwn_input_txs_mean=0,
+                    blocks_btwn_input_txs_median=0,
+                    blocks_btwn_output_txs_total=0,
+                    blocks_btwn_output_txs_min=0,
+                    blocks_btwn_output_txs_max=0,
+                    blocks_btwn_output_txs_mean=0,
+                    blocks_btwn_output_txs_median=0,
+                    num_addr_transacted_multiple=0,
+                    transacted_w_address_total=0,
+                    transacted_w_address_min=0,
+                    transacted_w_address_max=0,
+                    transacted_w_address_mean=0,
+                    transacted_w_address_median=0,
+                    class_inference=-1,
+                    last_updated=wallet_data_record["last_updated"],
+                    is_populated=False,
+                )
             wallet_data = WalletData(
                 address=wallet_data_record["address"],
                 num_txs_as_sender=wallet_data_record["num_txs_as_sender"],
@@ -109,7 +170,7 @@ def get_wallet_data_from_db(
                 transacted_w_address_median=wallet_data_record[
                     "transacted_w_address_median"
                 ],
-                class_inference=-1,  # Placeholder value, will be updated later
+                class_inference=wallet_data_record["class_inference"],
                 last_updated=wallet_data_record["last_updated"],
                 is_populated=wallet_data_record["is_populated"],
             )
@@ -270,7 +331,7 @@ def _update_connected_wallets_in_db(
             """
             MERGE (w:Wallet {address: $wallet_address})
             MERGE (cw:Wallet {address: $connected_address})
-            ON CREATE SET cw.populated = False
+            ON CREATE SET cw.is_populated = False, cw.last_updated = timestamp()
             MERGE (cw)-[r:TRANSACTED_WITH]->(w)
             ON CREATE SET r.num_transactions = $num_transactions, r.amount_transacted = $amount_transacted
             ON MATCH SET r.num_transactions = $num_transactions, r.amount_transacted = $amount_transacted
@@ -287,7 +348,7 @@ def _update_connected_wallets_in_db(
             """
             MERGE (w:Wallet {address: $wallet_address})
             MERGE (cw:Wallet {address: $connected_address})
-            ON CREATE SET cw.populated = False
+            ON CREATE SET cw.populated = False, cw.last_updated = timestamp()
             MERGE (w)-[r:TRANSACTED_WITH]->(cw)
             ON CREATE SET r.num_transactions = $num_transactions, r.amount_transacted = $amount_transacted
             ON MATCH SET r.num_transactions = $num_transactions, r.amount_transacted = $amount_transacted

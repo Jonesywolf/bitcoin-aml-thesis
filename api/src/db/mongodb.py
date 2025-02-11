@@ -33,11 +33,13 @@ def set_up_database(mongo_client: MongoClient) -> None:
 
     # Add a compound index on the transactions collection for uniqueness of the address and transaction hash
     transactions.create_index(
-        [("address", ASCENDING), ("tx_hash", ASCENDING)], unique=True
+        [("address", ASCENDING), ("txid", ASCENDING)], unique=True
     )
 
-    # Add a compound index on the transactions collection for efficient querying by address and time
-    transactions.create_index([("address", ASCENDING), ("time", DESCENDING)])
+    # Add a compound index on the transactions collection for efficient querying by address and block time
+    transactions.create_index(
+        [("address", ASCENDING), ("status.block_time", DESCENDING)]
+    )
 
 
 def get_bitcoin_address_query_response_from_db(
@@ -62,9 +64,14 @@ def get_bitcoin_address_query_response_from_db(
     if not address_dict:
         return None
 
-    transactions = list(transaction_collection.find(query).sort("time", DESCENDING))
+    # Could have also used "status.block_height" if we had an index on it
+    transactions = list(
+        transaction_collection.find(query).sort("status.block_time", DESCENDING)
+    )
     try:
-        address_dict["txs"] = [Transaction.model_validate(tx) for tx in transactions]
+        address_dict["transactions"] = [
+            Transaction.model_validate(tx) for tx in transactions
+        ]
     except ValidationError as e:
         logger.error(f"Error parsing transaction data for address {address}: {e}")
         return None
@@ -78,7 +85,9 @@ def get_bitcoin_address_query_response_from_db(
 
 
 def add_bitcoin_address_query_response_to_db(
-    mongo_client: MongoClient, query_response: BitcoinAddressQueryResponse
+    mongo_client: MongoClient,
+    query_response: BitcoinAddressQueryResponse,
+    include_mempool: bool = False,
 ) -> Optional[str]:
     """
     Add (or update) the query response for a Bitcoin address to the database.
@@ -86,6 +95,7 @@ def add_bitcoin_address_query_response_to_db(
     Parameters:
     - mongo_client: The MongoDB client instance
     - query_response: The query response for the Bitcoin address
+    - include_mempool: Whether to include mempool transactions in the cached response
 
     Returns:
     - error message if any, None if successful
@@ -98,16 +108,20 @@ def add_bitcoin_address_query_response_to_db(
     # Make a copy of the query response to avoid modifying the original object
     query_response = query_response.model_copy()
 
-    transactions = query_response.txs
+    if not include_mempool:
+        query_response.transactions = [
+            tx for tx in query_response.transactions if tx.status.confirmed
+        ]
+    transactions = query_response.transactions
 
     # Clear transactions from the address response to avoid duplication
-    query_response.txs = []
+    query_response.transactions = []
 
-    # ! Use the alias names for the fields in the database or pulling data from the database will fail
+    # Dump by alias in case alias names are used in the model
     address_dict = query_response.model_dump(by_alias=True)
 
-    # Remove the txs field from the address_dict to avoid duplication
-    address_dict.pop("txs", None)
+    # Remove the transactions field from the address_dict to avoid duplication
+    address_dict.pop("transactions", None)
 
     try:
         address_collection.replace_one(query, address_dict, upsert=True)
@@ -120,12 +134,12 @@ def add_bitcoin_address_query_response_to_db(
         transaction_dict["address"] = query_response.address
         try:
             transaction_collection.replace_one(
-                {"address": query_response.address, "hash": transaction.hash},
+                {"address": query_response.address, "txid": transaction.txid},
                 transaction_dict,
                 upsert=True,
             )
         except PyMongoError as e:
-            logger.error(f"Error updating transaction {transaction.hash}: {e}")
-            return f"Error updating transaction {transaction.hash}: {e}"
+            logger.error(f"Error updating transaction {transaction.txid}: {e}")
+            return f"Error updating transaction {transaction.txid}: {e}"
 
     return None

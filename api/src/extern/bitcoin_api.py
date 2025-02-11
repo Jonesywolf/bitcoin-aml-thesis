@@ -1,11 +1,12 @@
 import logging
+from pydantic import ValidationError
 from pymongo import MongoClient
 from collections import defaultdict
 from datetime import datetime
 from typing import Optional, Tuple
 
 from src.extern.api_worker import (
-    BlockchainAPIWorker,
+    BlockstreamAPIWorker,
     get_address_information,
     get_transaction_range,
 )
@@ -18,6 +19,7 @@ from src.models import (
     WalletConnectionDetails,
     ConnectedWallets,
     BitcoinAddressQueryResponse,
+    Transaction,
 )
 
 # Conversion factor from satoshis to BTC
@@ -26,14 +28,14 @@ logger = logging.getLogger(__name__)
 
 
 async def get_wallet_data_from_api(
-    api_worker: BlockchainAPIWorker,
+    api_worker: BlockstreamAPIWorker,
     mongo_client: MongoClient,
     base58_address: str,
 ) -> Tuple[WalletData, ConnectedWallets]:
     """
-    Convert the wallet data from the Blockchain.com API to a WalletData object.
+    Convert the wallet data from the blockstream.info to a WalletData object.
 
-    @param api_worker: The Blockchain.com API worker instance.
+    @param api_worker: The blockstream.com API worker instance.
     @param mongo_client: The MongoDB client instance.
     @param base58_address: The base58 encoded Bitcoin address to query.
     @return: The WalletData object populated with the data from the API.
@@ -48,13 +50,13 @@ async def get_wallet_data_from_api(
 
 
 async def get_address_data(
-    api_worker: BlockchainAPIWorker,
+    api_worker: BlockstreamAPIWorker,
     mongo_client: MongoClient,
     base58_address: str,
     maximum_transactions: int = 20000,  # TODO: Fiddle with this number
 ) -> Optional[BitcoinAddressQueryResponse]:
     """
-    Get the address data from the Blockchain.com API or the MongoDB cache.
+    Get the address data from the blockstream.com API or the MongoDB cache.
 
     @param mongo_client: The MongoDB client instance.
     @param base58_address: The base58 encoded Bitcoin address to query.
@@ -68,34 +70,50 @@ async def get_address_data(
 
     # If the address data is not retrieved from the API or the cache is up to date,
     # return the cached data
-    if latest_address_data is None or (
+    if latest_address_data is None:
+        if (
+            cached_address_data is not None
+            and cached_address_data.chain_stats.tx_count
+            == latest_address_data.chain_stats.tx_count
+        ):
+            logger.info(f"Using cached data for address {base58_address}")
+            return cached_address_data
+        else:
+            logger.error(f"Failed to retrieve data for address {base58_address}")
+            return None
+    elif (
         cached_address_data is not None
-        and cached_address_data.n_tx == latest_address_data.n_tx
+        and cached_address_data.chain_stats.tx_count
+        == latest_address_data.chain_stats.tx_count
     ):
         logger.info(f"Using cached data for address {base58_address}")
         return cached_address_data
     else:
-        # If the number of transactions is greater than 100, the API response is paginated
+        # If the number of transactions is greater than 25, the API response is paginated
         # and the data is incomplete, so make new API calls until all transactions are retrieved
-        if latest_address_data.n_tx > 100:
-            logger.info(f"Address {base58_address} has more than 100 transactions")
-            if latest_address_data.n_tx > maximum_transactions:
+        if latest_address_data.chain_stats.tx_count > 25:
+            logger.info(
+                f"Address {base58_address} has more than 25 transactions: {latest_address_data.chain_stats.tx_count}"
+            )
+            if latest_address_data.chain_stats.tx_count > maximum_transactions:
                 logger.error(
-                    f"Address {base58_address} has {latest_address_data.n_tx} transactions, which exceeds the maximum of {maximum_transactions}."
+                    f"Address {base58_address} has {latest_address_data.chain_stats.tx_count} transactions, which exceeds the maximum of {maximum_transactions}."
                 )
-                return None
+                return None  # ? Should we return the cached data here?
             if cached_address_data is not None:
                 logger.info(
                     f"Supplementing address transaction data using cache for address {base58_address}"
                 )
-                latest_address_data.txs = cached_address_data.txs
+                # Technically should be using the latest address data here, but its a lot of work to save one request
+                latest_address_data.transactions = cached_address_data.transactions
                 address_transactions = await get_transaction_range(
                     api_worker,
                     base58_address,
-                    len(
-                        cached_address_data.txs
-                    ),  # Don't use n_tx here, as we may have failed to retrieve all transactions last time
-                    latest_address_data.n_tx,
+                    last_seen_txid=cached_address_data.last_seen_txid,
+                )
+                # Prepend the new transactions to the existing ones to preserve order
+                latest_address_data.transactions = (
+                    address_transactions + latest_address_data.transactions
                 )
             else:
                 logger.info(
@@ -104,10 +122,13 @@ async def get_address_data(
                 address_transactions = await get_transaction_range(
                     api_worker,
                     base58_address,
-                    100,
-                    latest_address_data.n_tx,
+                    last_seen_txid=latest_address_data.transactions[-1].txid,
                 )
-            latest_address_data.txs.extend(address_transactions)
+                # Append the rest pf the transactions to preserve order
+                latest_address_data.transactions.extend(address_transactions)
+
+        # Store the last seen transaction ID in the cache for future updates
+        latest_address_data.last_seen_txid = latest_address_data.transactions[0].txid
 
         _ = add_bitcoin_address_query_response_to_db(mongo_client, latest_address_data)
         return latest_address_data
@@ -115,6 +136,7 @@ async def get_address_data(
 
 def convert_to_wallet_data(
     address_query_response: BitcoinAddressQueryResponse,
+    include_mempool: bool = False,
 ) -> Tuple[WalletData, ConnectedWallets]:
     """
     Converts a BitcoinAddressQueryResponse object to a WalletData object.
@@ -126,14 +148,20 @@ def convert_to_wallet_data(
         WalletData: The populated WalletData object.
     """
     # Extract transactions
-    transactions = address_query_response.txs
+    transactions = address_query_response.transactions
 
     # Initialize variables for calculations
+    total_txs = address_query_response.chain_stats.tx_count
+    if include_mempool:
+        total_txs += address_query_response.mempool_stats.tx_count
+
     num_txs_as_sender = 0
     num_txs_as_receiver = 0
     first_block_appeared_in = float("inf")
     last_block_appeared_in = float("-inf")
-    total_txs = address_query_response.n_tx
+    last_block_sent_in = float("-inf")
+    last_block_received_in = float("-inf")
+
     first_sent_block = float("inf")
     first_received_block = float("inf")
     btc_transacted_total = 0.0
@@ -165,88 +193,153 @@ def convert_to_wallet_data(
 
     # Process each transaction
     for tx in transactions:
+        if not tx.status.confirmed and not include_mempool:
+            continue
+
         num_addresses_transacted_with_this_tx = 0
-        btc_transacted.append(abs(tx.result))
+
+        # Update blocks between transactions
+        if last_block_appeared_in != float("-inf"):
+            # Use absolute value since we're traversing the transactions in order from most to least recent
+            blocks_btwn_txs.append(abs(tx.status.block_height - last_block_appeared_in))
+
         # Update first and last block appeared in
-        first_block_appeared_in = min(first_block_appeared_in, tx.block_height)
-        last_block_appeared_in = max(last_block_appeared_in, tx.block_height)
+        first_block_appeared_in = min(first_block_appeared_in, tx.status.block_height)
+        last_block_appeared_in = max(last_block_appeared_in, tx.status.block_height)
 
         # * Note that a transaction can show up as a sender and receiver and it can show up as an input or
         # * output more than once
         counted_this_tx_as_sender = False
         counted_this_tx_as_receiver = False
-        for tx_input in tx.inputs:
-            if tx_input.prev_out.addr == address_query_response.address:
+
+        # Create tx input and output dicts to handle the case where there is more than one input:
+        # ex: bc1qpa35qq6xe57hxzru6xqlnr8u2fmvmxd8xfgx5z, txid: b6667f61edae55327a483a389a9d346675d85254f3737834eea7d7c16432efaf
+        tx_input_dict = {}
+        for tx_input in tx.vin:
+            if tx_input.prevout.scriptpubkey_address in tx_input_dict:
+                tx_input_dict[
+                    tx_input.prevout.scriptpubkey_address
+                ] += tx_input.prevout.value
+            else:
+                tx_input_dict[tx_input.prevout.scriptpubkey_address] = (
+                    tx_input.prevout.value
+                )
+        tx_output_dict = {}
+        for tx_output in tx.vout:
+            if tx_output.scriptpubkey_address in tx_output_dict:
+                tx_output_dict[tx_output.scriptpubkey_address] += tx_output.value
+            else:
+                tx_output_dict[tx_output.scriptpubkey_address] = tx_output.value
+
+        for tx_input in tx.vin:
+            if tx_input.prevout.scriptpubkey_address == address_query_response.address:
                 if not counted_this_tx_as_sender:
                     num_txs_as_sender += 1
-                    first_sent_block = min(first_sent_block, tx.block_height)
-                    blocks_btwn_input_txs.append(tx.block_height)
-                    counted_this_tx_as_sender = True
+                    first_sent_block = min(first_sent_block, tx.status.block_height)
 
-                # Update sent BTC
-                btc_sent.append(tx_input.prev_out.value)
-                btc_sent_total += tx_input.prev_out.value
-                btc_sent_min = min(btc_sent_min, tx_input.prev_out.value)
-                btc_sent_max = max(btc_sent_max, tx_input.prev_out.value)
+                    if last_block_sent_in != float("-inf"):
+                        blocks_btwn_input_txs.append(
+                            abs(tx.status.block_height - last_block_sent_in)
+                        )
+                    last_block_sent_in = tx.status.block_height
+
+                    counted_this_tx_as_sender = True
+                    btc_sent.append(tx_input.prevout.value)
+                else:
+                    btc_sent[-1] += tx_input.prevout.value
 
                 # Update BTC fees (paid by sender)
                 btc_fees.append(tx.fee)
                 fees_total += tx.fee
                 fees_min = min(fees_min, tx.fee)
                 fees_max = max(fees_max, tx.fee)
-
-                btc_fees_as_share.append(tx.fee / abs(tx.result))
-            else:
+            elif (
+                address_query_response.address not in tx_input_dict
+                or address_query_response.address in tx_output_dict
+            ):  # If there are multiple inputs and this address is one of them, the other inputs
+                # are not inbound connections unless this address is also a recipient in this transaction
+                addr = tx_input.prevout.scriptpubkey_address
                 num_addresses_transacted_with_this_tx += 1
-                addresses_transacted_with[tx_input.prev_out.addr] += 1
-                if tx_input.prev_out.addr in outbound_wallets:
-                    outbound_wallets[tx_input.prev_out.addr].num_transactions += 1
-                    outbound_wallets[tx_input.prev_out.addr].amount_transacted += (
-                        tx_input.prev_out.value * SATOSHIS_TO_BTC
+                addresses_transacted_with[addr] += 1
+                if addr in inbound_wallets:
+                    inbound_wallets[addr].num_transactions += 1
+                    inbound_wallets[addr].amount_transacted += (
+                        tx_input.prevout.value * SATOSHIS_TO_BTC
                     )
                 elif (
-                    tx_input.prev_out.addr is not None
+                    addr is not None
                 ):  # Some transactions have no address in the API response
-                    outbound_wallets[tx_input.prev_out.addr] = WalletConnectionDetails(
-                        address=tx_input.prev_out.addr,
+                    inbound_wallets[addr] = WalletConnectionDetails(
+                        address=addr,
                         num_transactions=1,
-                        amount_transacted=tx_input.prev_out.value * SATOSHIS_TO_BTC,
+                        amount_transacted=tx_input.prevout.value * SATOSHIS_TO_BTC,
                     )
 
-        for tx_output in tx.out:
-            if tx_output.addr == address_query_response.address:
+        if counted_this_tx_as_sender:
+            # Update sent BTC
+            btc_sent_total += btc_sent[-1]
+            btc_sent_min = min(btc_sent_min, btc_sent[-1])
+            btc_sent_max = max(btc_sent_max, btc_sent[-1])
+
+            # Update BTC fees as share of sent BTC
+            btc_fees_as_share.append(tx.fee / btc_sent[-1])
+
+        for tx_output in tx.vout:
+            if tx_output.scriptpubkey_address == address_query_response.address:
                 if not counted_this_tx_as_receiver:
                     num_txs_as_receiver += 1
-                    blocks_btwn_output_txs.append(tx.block_height)
-                    first_received_block = min(first_received_block, tx.block_height)
+                    if last_block_received_in != float("-inf"):
+                        blocks_btwn_output_txs.append(
+                            abs(tx.status.block_height - last_block_received_in)
+                        )
+                    last_block_received_in = tx.status.block_height
+
+                    first_received_block = min(
+                        first_received_block, tx.status.block_height
+                    )
                     counted_this_tx_as_receiver = True
 
-                # Update received BTC
-                btc_received.append(tx_output.value)
-                btc_received_total += tx_output.value
-                btc_received_min = min(btc_received_min, tx_output.value)
-                btc_received_max = max(btc_received_max, tx_output.value)
-            else:
+                    btc_received.append(tx_output.value)
+                else:
+                    btc_received[-1] += tx_output.value
+
+            elif (
+                counted_this_tx_as_sender
+            ):  # Need to be the sender to have transacted with these other recipients
+                addr = tx_output.scriptpubkey_address
                 num_addresses_transacted_with_this_tx += 1
-                addresses_transacted_with[tx_output.addr] += 1
-                if tx_output.addr in inbound_wallets:
-                    inbound_wallets[tx_output.addr].num_transactions += 1
-                    inbound_wallets[tx_output.addr].amount_transacted += (
+                addresses_transacted_with[addr] += 1
+                if addr in outbound_wallets:
+                    outbound_wallets[addr].num_transactions += 1
+                    outbound_wallets[addr].amount_transacted += (
                         tx_output.value * SATOSHIS_TO_BTC
                     )
                 elif (
-                    tx_output.addr is not None
+                    addr is not None
                 ):  # Some transactions have no address in the API response
-                    inbound_wallets[tx_output.addr] = WalletConnectionDetails(
-                        address=tx_output.addr,
+                    outbound_wallets[addr] = WalletConnectionDetails(
+                        address=addr,
                         num_transactions=1,
                         amount_transacted=tx_output.value * SATOSHIS_TO_BTC,
                     )
 
-        # Update total BTC transacted
-        btc_transacted_total += abs(tx.result)
-        btc_transacted_min = min(btc_transacted_min, tx.result)
-        btc_transacted_max = max(btc_transacted_max, tx.result)
+        if counted_this_tx_as_receiver:
+            # Update received BTC
+            btc_received_total += btc_received[-1]
+            btc_received_min = min(btc_received_min, btc_received[-1])
+            btc_received_max = max(btc_received_max, btc_received[-1])
+
+        # Update BTC transacted
+        btc_transacted_this_tx = 0
+        if counted_this_tx_as_sender:
+            btc_transacted_this_tx += btc_sent[-1]
+        if counted_this_tx_as_receiver:
+            btc_transacted_this_tx += btc_received[-1]
+
+        btc_transacted.append(btc_transacted_this_tx)
+        btc_transacted_total += abs(btc_transacted_this_tx)
+        btc_transacted_min = min(btc_transacted_min, btc_transacted_this_tx)
+        btc_transacted_max = max(btc_transacted_max, btc_transacted_this_tx)
 
         # Update num addresses transacted with
         num_addresses_transacted_with.append(num_addresses_transacted_with_this_tx)

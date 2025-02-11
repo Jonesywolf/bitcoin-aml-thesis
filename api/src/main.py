@@ -4,9 +4,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from src.config import LOG_LEVEL
-from src.routes import wallet_data
-from src.routes import connected_wallets
+from src.config import LOG_LEVEL, APPLICATION_TYPE
+from src.routes.api import wallet_data
+from src.routes.api import connected_wallets
 from src.shared.state import lifespan
 
 # Configure logging
@@ -29,8 +29,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(wallet_data.router, prefix="/wallet")
-app.include_router(connected_wallets.router, prefix="/connected-wallets")
+if APPLICATION_TYPE == "API":
+    app.include_router(wallet_data.router, prefix="/wallet")
+    app.include_router(connected_wallets.router, prefix="/connected-wallets")
+elif APPLICATION_TYPE == "WORKER":
+    pass  # TODO: Add worker routes
+else:
+    logger.fatal(f"Unknown application type: {APPLICATION_TYPE}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

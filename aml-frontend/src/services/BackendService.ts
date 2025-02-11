@@ -6,7 +6,7 @@ import { WalletDataCache } from "./WalletDataCache";
 class BackendService {
 	static async fetchWalletData(
 		walletAddress: string,
-		timeout: number = 5000
+		timeout: number = 10000
 	): Promise<WalletData> {
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -36,7 +36,7 @@ class BackendService {
 
 	static async fetchWalletDataWithCache(
 		walletAddress: string,
-		timeout: number = 5000
+		timeout: number = 10000
 	): Promise<WalletData> {
 		if (!walletAddress) {
 			throw new Error("Wallet address is empty");
