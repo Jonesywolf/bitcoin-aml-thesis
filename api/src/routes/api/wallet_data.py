@@ -1,18 +1,11 @@
+from typing import Tuple
 from fastapi import APIRouter, Request, HTTPException, status
-from src.ml.random_forest import infer_wallet_data_class
-from src.extern.bitcoin_api import (
-    convert_to_wallet_data,
-    get_address_data,
-    get_wallet_data_from_api,
-)
-from src.db.neo4j import (
-    get_wallet_data_from_db,
-    update_connected_wallets_in_db,
-    update_wallet_data_in_db,
-    add_wallet_data_to_db,
-)
-from src.models import WalletData
+from pydantic import ValidationError
+from src.config import WORKER_API_URL, WORKER_WALLET_ROUTE_PREFIX
+from src.db.neo4j import get_wallet_data_from_db
+from src.models import ConnectedWallets, WalletData
 import logging
+import aiohttp
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -30,45 +23,55 @@ async def get_wallet_data(
     # If the wallet is not found in the database, or its a stub added by connected wallets or if force_update is True
     # get the data from the external API directly
     if wallet_data is None or not wallet_data.is_populated or force_update:
-        # Use an external API to get the data
-        new_wallet_data, connected_wallets = await get_wallet_data_from_api(
-            request.app.state.api_worker, request.app.state.mongo_client, base58_address
-        )
+        # Use the worker to get the data from the Blockstream API
+        new_wallet_data = await get_wallet_data_from_worker(base58_address)
         if new_wallet_data is None:
             # If the wallet is not found in the external API, return a 404 response
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Wallet not found"
             )
-        elif connected_wallets is None:
-            # If the connected wallets are not found in the external API, return a 500 response
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error getting connected wallets",
-            )
         else:
-            # If the wallet is found in the external API, infer its class, save it to the database,
-            # query the connections while you're at it and add those to the database too
-
-            # Compute the inference for the wallet data
-            new_wallet_data = infer_wallet_data_class(
-                request.app.state.ml_session, new_wallet_data
-            )
-
-            # Add or update the wallet data and connected wallets to the database depending on whether the
-            # wallet data was found in the database or not, which could be true if force_update is True or
-            # the wallet is not populated
-            if wallet_data is None:
-                add_wallet_data_to_db(request.app.state.neo4j_driver, new_wallet_data)
-            else:
-                update_wallet_data_in_db(
-                    request.app.state.neo4j_driver, new_wallet_data
-                )
-
-            update_connected_wallets_in_db(
-                request.app.state.neo4j_driver, base58_address, connected_wallets
-            )
-
             return new_wallet_data
 
     # If the wallet is found in the database, check and it is populated, return the wallet data
+    return wallet_data
+
+
+async def get_wallet_data_from_worker(
+    base58_address: str,
+) -> Tuple[WalletData]:
+    """
+    Get the wallet data from the worker.
+
+    Parameters:
+    - base58_address: The base58 encoded Bitcoin address to query
+
+    Returns:
+    - The wallet data
+    """
+    wallet_data = None
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{WORKER_API_URL}{WORKER_WALLET_ROUTE_PREFIX}/{base58_address}"
+        ) as response:
+            if response.status == 200:
+                data = await response.json()
+                try:
+                    wallet_data = WalletData.model_validate(data)
+                    return wallet_data
+                except ValidationError as e:
+                    logger.error(f"Error parsing validating parsed model: {e}")
+                    return None, None
+                except Exception as e:
+                    logger.error(f"Error parsing JSON response: {e}")
+                    return None, None
+            elif response.status == 404:
+                return None, None
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Error getting data from worker",
+                )
+
     return wallet_data
