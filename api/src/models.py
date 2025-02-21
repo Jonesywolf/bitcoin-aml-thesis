@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 import numpy as np
@@ -279,7 +280,7 @@ class TransactionInput(BaseModel):
 
     txid: str  # Transaction ID of the previous transaction
     vout: int  # Index of the output being spent
-    prevout: TransactionOutput  # Previous output details
+    prevout: Optional[TransactionOutput]  # Previous output details
     scriptsig: str  # ScriptSig used to unlock the output
     scriptsig_asm: str  # ASM representation of the scriptsig
     is_coinbase: bool  # Indicates if this input is a coinbase transaction
@@ -382,3 +383,23 @@ class BitcoinAddressQueryResponse(BaseModel):
     # We store the last seen txid to fetch the next page of transactions and
     # because we don't know the tie breaking rule when a wallet sends multiple
     # transactions in the same block
+
+
+class Block(BaseModel):
+    """
+    Represents a Bitcoin block.
+    """
+
+    id: str  # The block ID (hash)
+    height: int  # The height of the block in the blockchain
+    version: int  # The version of the block
+    timestamp: datetime  # The timestamp of the block (datetime)
+    tx_count: int  # The number of transactions in the block
+    size: int  # The size of the block in bytes
+    weight: int  # The weight of the block (used in SegWit)
+    merkle_root: str  # The Merkle root of the block
+    previousblockhash: str  # The hash of the previous block
+    mediantime: int  # The median time of the block (UNIX time)
+    nonce: int  # The nonce used in the block's proof of work
+    bits: int  # The bits field of the block header
+    difficulty: float  # The difficulty target of the block

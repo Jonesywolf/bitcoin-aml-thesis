@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from contextlib import asynccontextmanager
@@ -6,6 +7,7 @@ from neo4j import GraphDatabase
 from pymongo import MongoClient
 import onnxruntime
 
+from src.worker.block_processing_worker import BlockProcessingWorker
 from src.shared.ml_session import MLSession
 from src.db.mongodb import set_up_database
 from src.extern.api_worker import BlockstreamAPIWorker
@@ -53,13 +55,35 @@ async def worker_lifespan(app):
     min_max_scalers = load("res/min_max_scalers.joblib")
     logger.info("Loaded MinMax scalers")
 
-    app.state.ml_session = MLSession(min_max_scalers, ort_session)
+    ml_session = MLSession(min_max_scalers, ort_session)
+    app.state.ml_session = ml_session
+    logger.info("Initialized machine learning session")
 
     blockchain_api_worker = BlockstreamAPIWorker()
     logger.info("Started API worker")
     app.state.api_worker = blockchain_api_worker
 
+    block_processing_worker = BlockProcessingWorker(
+        mongo_client, blockchain_api_worker, ml_session, neo4j_driver
+    )
+    app.state.block_processing_worker_task = asyncio.create_task(
+        block_processing_worker.start()
+    )
+    logger.info("Started block processing worker")
+
     yield
+
+    block_processing_worker.stop()
+    logger.info("Stopped block processing worker")
+
+    app.state.block_processing_worker_task.cancel()
+    try:
+        await app.state.block_processing_worker_task
+    except asyncio.CancelledError:
+        logger.info("Block processing worker task cancelled")
+
+    await blockchain_api_worker.close()
+    logger.info("Stopped API worker")
 
     neo4j_driver.close()
     logger.info("Disconnected from Neo4j")
@@ -70,9 +94,6 @@ async def worker_lifespan(app):
     # ? Is this necessary?
     app.state.ml_session = None
     logger.info("Cleaned up random forest model session")
-
-    await blockchain_api_worker.close()
-    logger.info("Stopped API worker")
 
 
 @asynccontextmanager

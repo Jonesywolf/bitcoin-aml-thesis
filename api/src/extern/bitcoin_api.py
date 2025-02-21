@@ -216,6 +216,11 @@ def convert_to_wallet_data(
         # ex: bc1qpa35qq6xe57hxzru6xqlnr8u2fmvmxd8xfgx5z, txid: b6667f61edae55327a483a389a9d346675d85254f3737834eea7d7c16432efaf
         tx_input_dict = {}
         for tx_input in tx.vin:
+            if (
+                tx_input.prevout is None
+                or tx_input.prevout.scriptpubkey_address is None
+            ):
+                continue
             if tx_input.prevout.scriptpubkey_address in tx_input_dict:
                 tx_input_dict[
                     tx_input.prevout.scriptpubkey_address
@@ -226,12 +231,19 @@ def convert_to_wallet_data(
                 )
         tx_output_dict = {}
         for tx_output in tx.vout:
+            if tx_output.scriptpubkey_address is None:
+                continue
             if tx_output.scriptpubkey_address in tx_output_dict:
                 tx_output_dict[tx_output.scriptpubkey_address] += tx_output.value
             else:
                 tx_output_dict[tx_output.scriptpubkey_address] = tx_output.value
 
         for tx_input in tx.vin:
+            if (
+                tx_input.prevout is None
+                or tx_input.prevout.scriptpubkey_address is None
+            ):
+                continue
             if tx_input.prevout.scriptpubkey_address == address_query_response.address:
                 if not counted_this_tx_as_sender:
                     num_txs_as_sender += 1
@@ -285,6 +297,8 @@ def convert_to_wallet_data(
             btc_fees_as_share.append(tx.fee / btc_sent[-1])
 
         for tx_output in tx.vout:
+            if tx_output.scriptpubkey_address is None:
+                continue
             if tx_output.scriptpubkey_address == address_query_response.address:
                 if not counted_this_tx_as_receiver:
                     num_txs_as_receiver += 1

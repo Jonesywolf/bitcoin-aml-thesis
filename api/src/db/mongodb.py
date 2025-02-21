@@ -9,6 +9,7 @@ from src.models import BitcoinAddressQueryResponse, Transaction
 API_CACHE_DB = "api_cache"
 ADDRESS_COLLECTION = "addresses"
 TRANSACTION_COLLECTION = "transactions"
+METADATA_COLLECTION = "metadata"
 
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ def set_up_database(mongo_client: MongoClient) -> None:
     # Create the collections if they don't exist
     addresses = db[ADDRESS_COLLECTION]
     transactions = db[TRANSACTION_COLLECTION]
+    metadata = db[METADATA_COLLECTION]
 
     # Add an index on 'address' in the addresses collection for efficient querying
     addresses.create_index("address", unique=True)
@@ -40,6 +42,10 @@ def set_up_database(mongo_client: MongoClient) -> None:
     transactions.create_index(
         [("address", ASCENDING), ("status.block_time", DESCENDING)]
     )
+
+    # Ensure the metadata collection has a document for the last processed block height
+    if metadata.count_documents({"_id": "last_processed_block_height"}) == 0:
+        metadata.insert_one({"_id": "last_processed_block_height", "height": 0})
 
 
 def get_bitcoin_address_query_response_from_db(
@@ -143,3 +149,39 @@ def add_bitcoin_address_query_response_to_db(
             return f"Error updating transaction {transaction.txid}: {e}"
 
     return None
+
+
+def get_last_processed_block_height(mongo_client: MongoClient) -> int:
+    """
+    Get the last processed block height from the database.
+
+    Parameters:
+    - mongo_client: The MongoDB client instance
+
+    Returns:
+    - The last processed block height
+    """
+    db = mongo_client[API_CACHE_DB]
+    metadata = db[METADATA_COLLECTION]
+    document = metadata.find_one({"_id": "last_processed_block_height"})
+    if document:
+        return document["height"]
+    else:
+        return 0
+
+
+def set_last_processed_block_height(mongo_client: MongoClient, height: int) -> None:
+    """
+    Set the last processed block height in the database.
+
+    Parameters:
+    - mongo_client: The MongoDB client instance
+    - height: The block height to set
+    """
+    db = mongo_client[API_CACHE_DB]
+    metadata = db[METADATA_COLLECTION]
+    metadata.update_one(
+        {"_id": "last_processed_block_height"},
+        {"$set": {"height": height}},
+        upsert=True,
+    )
