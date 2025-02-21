@@ -136,6 +136,7 @@ class BlockProcessingWorker:
                         )
             except Exception as e:
                 logger.error(f"Error in block processing worker: {e}")
+                logger.exception(e)
                 await asyncio.sleep(1)
 
     def stop(self) -> None:
