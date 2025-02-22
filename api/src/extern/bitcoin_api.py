@@ -358,13 +358,14 @@ def convert_to_wallet_data(
         # Update num addresses transacted with
         num_addresses_transacted_with.append(num_addresses_transacted_with_this_tx)
 
-    if total_txs == 0:
+    txs_with_amounts = len(btc_transacted)
+    if txs_with_amounts == 0:
         btc_transacted_mean = 0
         btc_transacted_median = 0
     else:
-        btc_transacted_mean = btc_transacted_total / total_txs
+        btc_transacted_mean = btc_transacted_total / txs_with_amounts
         txs_sorted_by_amount = sorted(btc_transacted)
-        btc_transacted_median = txs_sorted_by_amount[total_txs // 2]
+        btc_transacted_median = txs_sorted_by_amount[txs_with_amounts // 2]
 
     if num_txs_as_sender == 0:
         btc_sent_mean = 0
@@ -449,7 +450,7 @@ def convert_to_wallet_data(
             len(blocks_btwn_output_txs) // 2
         ]
 
-    if total_txs == 0:
+    if total_txs == 0 or not addresses_transacted_with:
         transacted_w_address_mean = 0
         transacted_w_address_median = 0
         transacted_w_address_min = 0
@@ -460,7 +461,7 @@ def convert_to_wallet_data(
         transacted_w_address_mean = transacted_w_address_total / total_txs
         sorted_num_addresses_transacted_with = sorted(num_addresses_transacted_with)
         transacted_w_address_median = sorted_num_addresses_transacted_with[
-            total_txs // 2
+            len(sorted_num_addresses_transacted_with) // 2
         ]
         transacted_w_address_min = min(num_addresses_transacted_with)
         transacted_w_address_max = max(num_addresses_transacted_with)
