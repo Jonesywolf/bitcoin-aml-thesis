@@ -1,5 +1,5 @@
 from time import time
-from typing import List
+from typing import List, Dict
 from neo4j import Driver
 from pymongo import MongoClient
 from src.db.neo4j import (
@@ -86,6 +86,9 @@ class BlockProcessingWorker:
                         )
                         await asyncio.sleep(1)
                         continue
+                    logger.info(
+                        f"Processing block {block_height} with hash {block_hash}"
+                    )
 
                     start_block_idx = 0
                     block_transactions = await get_block_transactions(
@@ -158,6 +161,8 @@ class BlockProcessingWorker:
         Parameters:
         - block_transactions: The list of transactions in the block
         """
+        address_tx_map: Dict[str, List[Transaction]] = {}
+
         for tx in block_transactions:
             tx_input_dict = {}
             for tx_input in tx.vin:
@@ -188,25 +193,59 @@ class BlockProcessingWorker:
             tx_addr_set = tx_input_set.union(tx_output_set)
 
             for address in tx_addr_set:
-                response = None
-                cached_response = get_bitcoin_address_query_response_from_db(
-                    self.mongo_client, address
+                if address not in address_tx_map:
+                    address_tx_map[address] = []
+                address_tx_map[address].append(tx)
+
+        for address, transactions in address_tx_map.items():
+            response = None
+            cached_response = get_bitcoin_address_query_response_from_db(
+                self.mongo_client, address
+            )
+            if cached_response is None:
+                response = await get_address_data(
+                    self.api_worker, self.mongo_client, address
                 )
-                if cached_response is None:
-                    response = await get_address_data(
-                        self.api_worker, self.mongo_client, address
-                    )
-                    if response is None:
-                        logger.error(f"Error fetching address data for {address}")
-                        continue
-                else:
+                if response is None:
+                    logger.error(f"Error fetching address data for {address}")
+                    continue
+            else:
+                for tx in transactions:
+                    tx_input_dict = {}
+                    for tx_input in tx.vin:
+                        if (
+                            tx_input.prevout is None
+                            or tx_input.prevout.scriptpubkey_address is None
+                        ):
+                            continue
+                        if tx_input.prevout.scriptpubkey_address in tx_input_dict:
+                            tx_input_dict[
+                                tx_input.prevout.scriptpubkey_address
+                            ] += tx_input.prevout.value
+                        else:
+                            tx_input_dict[tx_input.prevout.scriptpubkey_address] = (
+                                tx_input.prevout.value
+                            )
+                    tx_output_dict = {}
+                    for tx_output in tx.vout:
+                        if tx_output.scriptpubkey_address is None:
+                            continue
+                        if tx_output.scriptpubkey_address in tx_output_dict:
+                            tx_output_dict[
+                                tx_output.scriptpubkey_address
+                            ] += tx_output.value
+                        else:
+                            tx_output_dict[tx_output.scriptpubkey_address] = (
+                                tx_output.value
+                            )
+
                     # * Not sure if these are being updated correctly
-                    if address in tx_input_set:
+                    if address in tx_input_dict:
                         cached_response.chain_stats.spent_txo_count += 1
                         cached_response.chain_stats.spent_txo_sum += tx_input_dict[
                             address
                         ]
-                    if address in tx_output_set:
+                    if address in tx_output_dict:
                         cached_response.chain_stats.funded_txo_count += 1
                         cached_response.chain_stats.funded_txo_sum += tx_output_dict[
                             address
@@ -214,28 +253,27 @@ class BlockProcessingWorker:
 
                     cached_response.chain_stats.tx_count += 1
 
-                    # Prepend the new transaction to the list of transactions
                     cached_response.transactions = [tx] + cached_response.transactions
                     cached_response.last_seen_txid = tx.txid
 
-                    response = cached_response
+                response = cached_response
 
-                # Update the mongoDB database with the new transaction
-                add_bitcoin_address_query_response_to_db(self.mongo_client, response)
+            # Update the mongoDB database with the new transaction
+            add_bitcoin_address_query_response_to_db(self.mongo_client, response)
 
-                # Update in Neo4j
-                wallet_data, connected_wallets = convert_to_wallet_data(response)
+            # Update in Neo4j
+            wallet_data, connected_wallets = convert_to_wallet_data(response)
 
-                # Compute the inference for the wallet data
-                wallet_data = infer_wallet_data_class(self.ml_session, wallet_data)
+            # Compute the inference for the wallet data
+            wallet_data = infer_wallet_data_class(self.ml_session, wallet_data)
 
-                # Add or update the wallet data and connected wallets to the database depending on whether the
-                # API response was found in the MongoDB cache or not
-                if cached_response is None:
-                    add_wallet_data_to_db(self.neo4j_driver, wallet_data)
-                else:
-                    update_wallet_data_in_db(self.neo4j_driver, wallet_data)
+            # Add or update the wallet data and connected wallets to the database depending on whether the
+            # API response was found in the MongoDB cache or not
+            if cached_response is None:
+                add_wallet_data_to_db(self.neo4j_driver, wallet_data)
+            else:
+                update_wallet_data_in_db(self.neo4j_driver, wallet_data)
 
-                update_connected_wallets_in_db(
-                    self.neo4j_driver, address, connected_wallets
-                )
+            update_connected_wallets_in_db(
+                self.neo4j_driver, address, connected_wallets
+            )
