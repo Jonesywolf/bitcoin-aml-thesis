@@ -1,0 +1,26 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy requirements file
+COPY requirements.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
+COPY src/ ./src/
+COPY res/ ./res/
+
+# Set environment variables
+ENV NEO4J_URI=neo4j://neo4j:7687
+ENV NEO4J_USERNAME=neo4j
+ENV NEO4J_PASSWORD=password
+ENV APPLICATION_TYPE=API
+ENV WORKER_API_URL=http://worker:8001
+
+# Expose the port the app runs on
+EXPOSE 8000
+
+# Command to run the application
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

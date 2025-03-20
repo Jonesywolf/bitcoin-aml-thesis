@@ -1,7 +1,7 @@
 import Config from "../config/Config";
+import { GlobalState } from "../contexts/GlobalContext";
 import ConnectedWallets from "../types/ConnectedWallets";
 import { WalletData } from "../types/WalletData";
-import { WalletDataCache } from "./WalletDataCache";
 
 class BackendService {
 	static async fetchWalletData(
@@ -36,14 +36,20 @@ class BackendService {
 
 	static async fetchWalletDataWithCache(
 		walletAddress: string,
+		globalState: GlobalState,
 		timeout: number = 10000
 	): Promise<WalletData> {
 		if (!walletAddress) {
 			throw new Error("Wallet address is empty");
 		}
+		if (!globalState.walletCache) {
+			throw new Error("Wallet cache is not initialized");
+		}
 
 		// Check if the wallet data is in the cache
-		const cachedData = await WalletDataCache.getCachedWalletData(walletAddress);
+		const cachedData = await globalState.walletCache.getCachedWalletData(
+			walletAddress
+		);
 		if (cachedData) {
 			console.log("Data from cache:", cachedData);
 			return cachedData;
@@ -54,7 +60,7 @@ class BackendService {
 		console.log("Data from API:", data);
 
 		// Cache the fetched data
-		await WalletDataCache.cacheWalletData(walletAddress, data);
+		await globalState.walletCache.cacheWalletData(walletAddress, data);
 
 		return data;
 	}

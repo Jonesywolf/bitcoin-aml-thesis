@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
 	SigmaContainer,
 	useSigma,
@@ -12,13 +12,14 @@ import { EdgeArrowProgram } from "sigma/rendering";
 import { EdgeCurvedArrowProgram } from "@sigma/edge-curve";
 import { getNodeColor, WalletData } from "../types/WalletData";
 import WalletInfoOverlay from "./WalletInfoOverlay";
-import InitialModal from "./InitialModal";
+import WalletAddressModal from "./WalletAddressModal";
 import { Button } from "react-bootstrap";
 import { MoonFill, SunFill } from "react-bootstrap-icons";
 import { Coordinates } from "sigma/types";
 import { LayoutForceAtlas2Control } from "@react-sigma/layout-forceatlas2";
 import BackendService from "../services/BackendService";
 import ErrorToast from "./ErrorToast";
+import { GlobalContext } from "../contexts/GlobalContext";
 
 const GraphComponent = () => {
 	const sigma = useSigma();
@@ -58,6 +59,11 @@ const GraphEvents = ({
 }) => {
 	const sigma = useSigma();
 	const registerEvents = useRegisterEvents();
+	const globalContext = useContext(GlobalContext);
+	if (!globalContext) {
+		throw new Error("Global context is not defined");
+	}
+	const { globalState } = globalContext;
 
 	useEffect(() => {
 		registerEvents({
@@ -68,7 +74,8 @@ const GraphEvents = ({
 
 					try {
 						const response = await BackendService.fetchWalletDataWithCache(
-							nodeId
+							nodeId,
+							globalState
 						);
 
 						// The wallet data is fetched successfully
@@ -199,6 +206,7 @@ const GraphEvents = ({
 		setShowOverlay,
 		setError,
 		setShowToast,
+		globalState,
 	]);
 	return null;
 };
@@ -207,12 +215,36 @@ const GraphWrapper = () => {
 	// State to manage the node data for the overlay
 	const [walletData, setWalletData] = useState<WalletData | null>(null);
 	const [showOverlay, setShowOverlay] = useState(false);
-	const [showModal, setShowModal] = useState(true);
+	const [showModal, setShowModal] = useState(false);
 	const [error, setError] = useState("");
 	const [showToast, setShowToast] = useState(false);
 	const [darkMode, setDarkMode] = useState(false);
 
 	const handleCloseModal = () => setShowModal(false);
+
+	const globalContext = useContext(GlobalContext);
+	if (!globalContext) {
+		throw new Error("Global context is not defined");
+	}
+
+	const { globalState, setGlobalState } = globalContext;
+
+	useEffect(() => {
+		const initializeWalletCache = async () => {
+			const initialWalletAddress =
+				await globalState.walletCache.getInitialWalletAddress();
+			console.log("Initial wallet address", initialWalletAddress);
+			if (initialWalletAddress) {
+				globalState.walletCache.initWithInitialWalletAddress(
+					initialWalletAddress
+				);
+			} else {
+				setShowModal(true);
+			}
+		};
+
+		initializeWalletCache();
+	}, [globalState.walletCache, setGlobalState]);
 
 	// Sigma settings
 	const settings = useMemo(
@@ -279,7 +311,7 @@ const GraphWrapper = () => {
 				errorTitle="Error:"
 				error={error}
 			/>
-			<InitialModal show={showModal} handleClose={handleCloseModal} />
+			<WalletAddressModal show={showModal} handleClose={handleCloseModal} />
 		</SigmaContainer>
 	);
 };

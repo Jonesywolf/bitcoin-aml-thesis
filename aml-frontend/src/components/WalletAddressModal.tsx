@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Button, Form, Modal, Spinner } from "react-bootstrap";
 import logo from "../assets/logo.svg"; // Import the SVG file
 import { useSigma } from "@react-sigma/core";
 import BackendService from "../services/BackendService";
 import ErrorToast from "./ErrorToast";
-import { WalletDataCache } from "../services/WalletDataCache";
 import { getNodeColor } from "../types/WalletData";
+import { GlobalContext } from "../contexts/GlobalContext";
 
-const InitialModal = ({
+const WalletAddressModal = ({
 	show,
 	handleClose,
 }: {
@@ -19,9 +19,41 @@ const InitialModal = ({
 	const [error, setError] = useState("");
 	const [showToast, setShowToast] = useState(false);
 	const sigma = useSigma();
+	const [initFromCache, setInitFromCache] = useState(false);
 
-	// TODO: Retrieve the initial wallet address from the cache if it exists then allow the user to proceed using that address
-	// Requires caching the graph data so it can be retrieved later
+	const globalContext = useContext(GlobalContext);
+	if (!globalContext) {
+		throw new Error("Global context is not defined");
+	}
+	const { globalState } = globalContext;
+
+	useEffect(() => {
+		const fetchInitialWalletAddress = async () => {
+			if (!initFromCache) {
+				const initialWalletAddress =
+					await globalState.walletCache.getInitialWalletAddress();
+				if (initialWalletAddress) {
+					const allWalletData =
+						await globalState.walletCache.getAllWalletData();
+					for (const walletData of allWalletData) {
+						console.log("Adding node to graph: ", walletData.address);
+						const nodeColor = getNodeColor(walletData);
+						const graph = sigma.getGraph();
+						graph.addNode(walletData.address, {
+							size: 10,
+							color: nodeColor,
+							x: 0,
+							y: 0,
+						});
+					}
+				}
+				setInitFromCache(true);
+			}
+		};
+		if (!show) {
+			fetchInitialWalletAddress();
+		}
+	}, [globalState, show, initFromCache, sigma]);
 
 	const handleSubmit = async (event: React.FormEvent) => {
 		event.preventDefault();
@@ -29,9 +61,12 @@ const InitialModal = ({
 
 		try {
 			// Set up the cache
-			WalletDataCache.initWithInitialWalletAddress(walletAddress);
+			globalState.walletCache.initWithInitialWalletAddress(walletAddress);
 
-			const response = await BackendService.fetchWalletData(walletAddress);
+			const response = await BackendService.fetchWalletDataWithCache(
+				walletAddress,
+				globalState
+			);
 
 			const nodeColor = getNodeColor(response);
 
@@ -118,4 +153,4 @@ const InitialModal = ({
 	);
 };
 
-export default InitialModal;
+export default WalletAddressModal;

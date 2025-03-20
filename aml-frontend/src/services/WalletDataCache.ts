@@ -2,14 +2,13 @@ import { openDB, IDBPDatabase } from "idb";
 import { WalletData } from "../types/WalletData";
 
 const DB_NAME = "bitcaml-data";
-// TODO: Store the graph data in the cache
-// TODO: Update the cache using a background service fed by SSRs from the backend
 
 export class WalletDataCache {
-	private static db: IDBPDatabase;
+	private db: IDBPDatabase | null = null;
 
-	public static async init() {
-		WalletDataCache.db = await openDB(DB_NAME, 1, {
+	public async init() {
+		console.log("Cache initialized");
+		this.db = await openDB(DB_NAME, 1, {
 			upgrade(db) {
 				db.createObjectStore("session-details");
 				db.createObjectStore("wallet-data");
@@ -17,60 +16,74 @@ export class WalletDataCache {
 		});
 	}
 
-	public static async initWithInitialWalletAddress(
-		initialWalletAddress: string
-	) {
+	public async initWithInitialWalletAddress(initialWalletAddress: string) {
 		if (!initialWalletAddress) {
 			throw new Error("Wallet address is empty");
 		}
 
-		if (!WalletDataCache.db) {
-			await WalletDataCache.init();
+		if (!this.db) {
+			await this.init();
 		}
 
-		const initialWalletAddressFromDB = await WalletDataCache.db.get(
-			"session-details",
-			"initial-wallet-address"
-		);
+		const initialWalletAddressFromDB = await this.getInitialWalletAddress();
 		if (initialWalletAddressFromDB != initialWalletAddress) {
 			console.log(
 				`New wallet address: ${initialWalletAddress} does not match the old wallet address: ${initialWalletAddressFromDB}, clearing the cache`
 			);
-			await WalletDataCache.db.clear("wallet-data");
-			await WalletDataCache.db.put(
-				"session-details",
-				"initial-wallet-address",
-				initialWalletAddress
-			);
+			await this.db!.clear("wallet-data");
+			await this.setInitialWalletAddress(initialWalletAddress);
 		}
 	}
 
-	public static async getInitialWalletAddress(): Promise<string | undefined> {
-		if (!WalletDataCache.db) {
+	public async getInitialWalletAddress(): Promise<string | undefined> {
+		if (!this.db) {
 			throw new Error("Cache is not initialized");
 		}
-		return WalletDataCache.db.get("session-details", "initial-wallet-address");
+		console.log("Getting initial wallet address from cache");
+		return this.db.get("session-details", "initial-wallet-address");
 	}
 
-	public static async getCachedWalletData(
+	public async setInitialWalletAddress(walletAddress: string) {
+		if (!walletAddress) {
+			throw new Error("Wallet address is empty");
+		}
+		if (!this.db) {
+			throw new Error("Cache is not initialized");
+		}
+		await this.db.put(
+			"session-details",
+			walletAddress,
+			"initial-wallet-address"
+		);
+	}
+
+	public async getAllWalletData(): Promise<WalletData[]> {
+		if (!this.db) {
+			throw new Error("Cache is not initialized");
+		}
+		return this.db.getAll("wallet-data");
+	}
+
+	public async getCachedWalletData(
 		walletAddress: string
 	): Promise<WalletData | undefined> {
 		if (!walletAddress) {
 			throw new Error("Wallet address is empty");
 		}
-		if (!WalletDataCache.db) {
+		if (!this.db) {
 			throw new Error("Cache is not initialized");
 		}
-		return WalletDataCache.db.get("wallet-data", walletAddress);
+		return this.db.get("wallet-data", walletAddress);
 	}
 
-	public static async cacheWalletData(walletAddress: string, data: WalletData) {
+	public async cacheWalletData(walletAddress: string, data: WalletData) {
 		if (!walletAddress) {
 			throw new Error("Wallet address is empty");
 		}
-		if (!WalletDataCache.db) {
+		if (!this.db) {
 			throw new Error("Cache is not initialized");
 		}
-		await WalletDataCache.db.put("wallet-data", data, walletAddress);
+		console.log("Caching wallet data for", walletAddress);
+		await this.db.put("wallet-data", data, walletAddress);
 	}
 }
