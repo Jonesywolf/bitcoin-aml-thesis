@@ -7,6 +7,10 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    volumes:
+      - ./mongo_db/data:/data/db
+      - ./mongo_db/configdb:/data/configdb
+      - ./mongo_db/logs:/data/logs
 
   mongo-express:
     image: mongo-express
@@ -40,7 +44,7 @@ services:
       - ./neo4j_db/import:/var/lib/neo4j/import
       - ./neo4j_db/plugins:/plugins
   worker:
-    image: ghcr.io/Jonesywolf/bitcoin-aml-thesis/worker:latest
+    image: ghcr.io/jonesywolf/bitcoin-aml-thesis/worker:latest
     ports:
       - 8001:8001
     restart: always
@@ -57,7 +61,7 @@ services:
       APPLICATION_TYPE: WORKER
   
   api:
-    image: ghcr.io/Jonesywolf/bitcoin-aml-thesis/api:latest
+    image: ghcr.io/jonesywolf/bitcoin-aml-thesis/api:latest
     build:
       context: ./api
       dockerfile: Dockerfile
