@@ -73,8 +73,6 @@ jobs:
 
       - name: Sign the published Docker images
         if: ${{ github.event_name != 'pull_request' }}
-        env:
-          COSIGN_EXPERIMENTAL: "true"
         run: |
-          cosign sign ghcr.io/${{ env.REPO }}/api@${{ steps.build_api.outputs.digest }}
-          cosign sign ghcr.io/${{ env.REPO }}/worker@${{ steps.build_worker.outputs.digest }}
+          cosign sign --yes ghcr.io/${{ env.REPO }}/api@${{ steps.build_api.outputs.digest }}
+          cosign sign --yes ghcr.io/${{ env.REPO }}/worker@${{ steps.build_worker.outputs.digest }}
