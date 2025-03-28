@@ -15,7 +15,6 @@ COPY res/ ./res/
 # Set environment variables
 ENV NEO4J_URI=neo4j://neo4j:7687
 ENV NEO4J_USERNAME=neo4j
-ENV NEO4J_PASSWORD=password
 ENV APPLICATION_TYPE=API
 ENV WORKER_API_URL=http://worker:8001
 
