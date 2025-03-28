@@ -40,7 +40,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/api ghcr.io/${{ github.repository }}/worker
+          images: ghcr.io/${{ github.repository.toLower() }}/api ghcr.io/${{ github.repository.toLower() }}/worker
 
       - name: Build and push API image
         id: build_api
@@ -50,8 +50,8 @@ jobs:
           file: ./api/Dockerfile.api
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository }}/api:latest
-            ghcr.io/${{ github.repository }}/api:${{ github.sha }}
+            ghcr.io/${{ github.repository.toLower() }}/api:latest
+            ghcr.io/${{ github.repository.toLower() }}/api:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -63,8 +63,8 @@ jobs:
           file: ./api/Dockerfile.worker
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository }}/worker:latest
-            ghcr.io/${{ github.repository }}/worker:${{ github.sha }}
+            ghcr.io/${{ github.repository.toLower() }}/worker:latest
+            ghcr.io/${{ github.repository.toLower() }}/worker:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -73,5 +73,5 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
-          cosign sign ghcr.io/${{ github.repository }}/api@${{ steps.build_api.outputs.digest }}
-          cosign sign ghcr.io/${{ github.repository }}/worker@${{ steps.build_worker.outputs.digest }}
+          cosign sign ghcr.io/${{ github.repository.toLower() }}/api@${{ steps.build_api.outputs.digest }}
+          cosign sign ghcr.io/${{ github.repository.toLower() }}/worker@${{ steps.build_worker.outputs.digest }}
