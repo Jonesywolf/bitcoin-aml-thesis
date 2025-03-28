@@ -178,41 +178,30 @@ def get_wallet_data_from_db(
     return None
 
 
-def update_wallet_data_in_db(neo4j_driver: Driver, wallet_data: WalletData):
+def upsert_wallet_data_to_db(neo4j_driver: Driver, wallet_data: WalletData):
     """
-    Update the wallet data for a given Bitcoin wallet address in the Neo4j database.
+    Add or update wallet data for a given Bitcoin wallet address in the Neo4j database.
+    Creates the node if it doesn't exist, or updates it if it does.
 
     Parameters:
     - neo4j_driver: The Neo4j driver to use for the query
-    - wallet_data: The wallet data to update in the database
+    - wallet_data: The wallet data to add or update in the database
+
+    Returns:
+    - True if the operation was successful
     """
     query = """
-    MATCH (w:Wallet {address: $base58_address})
+    MERGE (w:Wallet {address: $address})
     SET w = $wallet_data
     RETURN w
     """
     with neo4j_driver.session() as session:
         session.run(
             query,
-            base58_address=wallet_data.address,
+            address=wallet_data.address,
             wallet_data=wallet_data.model_dump(),
         )
-
-
-def add_wallet_data_to_db(neo4j_driver: Driver, wallet_data: WalletData):
-    """
-    Add the wallet data for a given Bitcoin wallet address to the Neo4j database.
-
-    Parameters:
-    - neo4j_driver: The Neo4j driver to use for the query
-    - wallet_data: The wallet data to add to the database
-    """
-    query = """
-    CREATE (w:Wallet $wallet_data)
-    RETURN w
-    """
-    with neo4j_driver.session() as session:
-        session.run(query, wallet_data=wallet_data.model_dump())
+    return True
 
 
 def get_connected_wallets_from_db(
@@ -295,7 +284,7 @@ def get_connected_wallets_from_db(
     return connected_wallets
 
 
-def update_connected_wallets_in_db(
+def upsert_connected_wallets_in_db(
     neo4j_driver: Driver, wallet_address: str, connected_wallets: ConnectedWallets
 ):
     """
@@ -306,12 +295,12 @@ def update_connected_wallets_in_db(
     - connected_wallets: The connected wallets data to add to the database
     """
     with neo4j_driver.session() as session:
-        session.write_transaction(
-            _update_connected_wallets_in_db, wallet_address, connected_wallets
+        session.execute_write(
+            _upsert_connected_wallets_in_db, wallet_address, connected_wallets
         )
 
 
-def _update_connected_wallets_in_db(
+def _upsert_connected_wallets_in_db(
     tx: ManagedTransaction, wallet_address: str, connected_wallets: ConnectedWallets
 ):
     """

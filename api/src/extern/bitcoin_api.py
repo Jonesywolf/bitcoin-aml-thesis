@@ -5,14 +5,11 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Optional, Tuple
 
+from src.db.mongodb import set_address_last_processed_block_height
 from src.extern.api_worker import (
     BlockstreamAPIWorker,
     get_address_information,
     get_transaction_range,
-)
-from src.db.mongodb import (
-    add_bitcoin_address_query_response_to_db,
-    get_bitcoin_address_query_response_from_db,
 )
 from src.models import (
     WalletData,
@@ -29,65 +26,48 @@ logger = logging.getLogger(__name__)
 
 async def get_wallet_data_from_api(
     api_worker: BlockstreamAPIWorker,
-    mongo_client: MongoClient,
     base58_address: str,
 ) -> Tuple[WalletData, ConnectedWallets]:
     """
     Convert the wallet data from the blockstream.info to a WalletData object.
 
     @param api_worker: The blockstream.com API worker instance.
-    @param mongo_client: The MongoDB client instance.
     @param base58_address: The base58 encoded Bitcoin address to query.
     @return: The WalletData object populated with the data from the API.
     @return: The ConnectedWallets object populated with the connected wallets from the API.
     """
-    address_data = await get_address_data(api_worker, mongo_client, base58_address)
+    address_data = await get_address_data(api_worker, base58_address)
     if address_data is None:
         return None, None
 
     wallet_data, connected_wallets = convert_to_wallet_data(address_data)
+
+    # Update the last processed block height for the address in the database
+    set_address_last_processed_block_height(
+        api_worker, base58_address, address_data.transactions[0].status.block_height
+    )
     return wallet_data, connected_wallets
 
 
 async def get_address_data(
     api_worker: BlockstreamAPIWorker,
-    mongo_client: MongoClient,
     base58_address: str,
     maximum_transactions: int = 20000,  # TODO: Fiddle with this number
 ) -> Optional[BitcoinAddressQueryResponse]:
     """
-    Get the address data from the blockstream.com API or the MongoDB cache.
+    Get the address data from the blockstream.com API
 
-    @param mongo_client: The MongoDB client instance.
     @param base58_address: The base58 encoded Bitcoin address to query.
     @return: The BitcoinAddressQueryResponse object populated with the data from the API.
     """
     # Retrieve the address data from the cache if it exists
-    cached_address_data = get_bitcoin_address_query_response_from_db(
-        mongo_client, base58_address
-    )
     latest_address_data = await get_address_information(api_worker, base58_address)
 
     # If the address data is not retrieved from the API or the cache is up to date,
     # return the cached data
     if latest_address_data is None:
-        if (
-            cached_address_data is not None
-            and cached_address_data.chain_stats.tx_count
-            == latest_address_data.chain_stats.tx_count
-        ):
-            logger.info(f"Using cached data for address {base58_address}")
-            return cached_address_data
-        else:
-            logger.error(f"Failed to retrieve data for address {base58_address}")
-            return None
-    elif (
-        cached_address_data is not None
-        and cached_address_data.chain_stats.tx_count
-        == latest_address_data.chain_stats.tx_count
-    ):
-        logger.info(f"Using cached data for address {base58_address}")
-        return cached_address_data
+        logger.error(f"Failed to retrieve data for address {base58_address}")
+        return None
     else:
         # If the number of transactions is greater than 25, the API response is paginated
         # and the data is incomplete, so make new API calls until all transactions are retrieved
@@ -100,37 +80,17 @@ async def get_address_data(
                     f"Address {base58_address} has {latest_address_data.chain_stats.tx_count} transactions, which exceeds the maximum of {maximum_transactions}."
                 )
                 return None  # ? Should we return the cached data here?
-            if cached_address_data is not None:
-                logger.info(
-                    f"Supplementing address transaction data using cache for address {base58_address}"
-                )
-                # Technically should be using the latest address data here, but its a lot of work to save one request
-                latest_address_data.transactions = cached_address_data.transactions
-                address_transactions = await get_transaction_range(
-                    api_worker,
-                    base58_address,
-                    last_seen_txid=cached_address_data.last_seen_txid,
-                )
-                # Prepend the new transactions to the existing ones to preserve order
-                latest_address_data.transactions = (
-                    address_transactions + latest_address_data.transactions
-                )
-            else:
-                logger.info(
-                    f"No cache found for address {base58_address}, fetching all transactions"
-                )
-                address_transactions = await get_transaction_range(
-                    api_worker,
-                    base58_address,
-                    last_seen_txid=latest_address_data.transactions[-1].txid,
-                )
-                # Append the rest pf the transactions to preserve order
-                latest_address_data.transactions.extend(address_transactions)
+        address_transactions = await get_transaction_range(
+            api_worker,
+            base58_address,
+            last_seen_txid=latest_address_data.transactions[-1].txid,
+        )
+        # Append the rest pf the transactions to preserve order
+        latest_address_data.transactions.extend(address_transactions)
 
         # Store the last seen transaction ID in the cache for future updates
         latest_address_data.last_seen_txid = latest_address_data.transactions[0].txid
 
-        _ = add_bitcoin_address_query_response_to_db(mongo_client, latest_address_data)
         return latest_address_data
 
 
@@ -468,6 +428,90 @@ def convert_to_wallet_data(
         num_addr_transacted_multiple = sum(
             [1 for num in num_addresses_transacted_with if num > 1]
         )
+
+    # Check for infinite or negative infinite values and replace with appropriate defaults
+    # First block appeared
+    if first_block_appeared_in == float("inf"):
+        logger.info(
+            f"Address {address_query_response.address}: first_block_appeared_in is infinity, setting to 0"
+        )
+        first_block_appeared_in = 0  # ? Should this be handled differently?
+
+    # Last block appeared
+    if last_block_appeared_in == float("-inf"):
+        logger.info(
+            f"Address {address_query_response.address}: last_block_appeared_in is -infinity, setting to 0"
+        )
+        last_block_appeared_in = 0  # ? Should this be handled differently?
+
+    # First sent block
+    if first_sent_block == float("inf"):
+        logger.info(
+            f"Address {address_query_response.address}: first_sent_block is infinity, setting to 0"
+        )
+        first_sent_block = 0  # ? Should this be handled differently?
+    # First received block
+    if first_received_block == float("inf"):
+        logger.info(
+            f"Address {address_query_response.address}: first_received_block is infinity, setting to 0"
+        )
+        first_received_block = 0
+
+    # BTC transacted min
+    if btc_transacted_min == float("inf"):
+        logger.info(
+            f"Address {address_query_response.address}: btc_transacted_min is infinity, setting to 0"
+        )
+        btc_transacted_min = 0
+
+    # BTC sent min
+    if btc_sent_min == float("inf"):
+        logger.info(
+            f"Address {address_query_response.address}: btc_sent_min is infinity, setting to 0"
+        )
+        btc_sent_min = 0
+
+    # BTC received min
+    if btc_received_min == float("inf"):
+        logger.info(
+            f"Address {address_query_response.address}: btc_received_min is infinity, setting to 0"
+        )
+        btc_received_min = 0
+
+    # Fees min
+    if fees_min == float("inf"):
+        logger.info(
+            f"Address {address_query_response.address}: fees_min is infinity, setting to 0"
+        )
+        fees_min = 0
+
+    # BTC transacted max
+    if btc_transacted_max == float("-inf"):
+        logger.info(
+            f"Address {address_query_response.address}: btc_transacted_max is -infinity, setting to 0"
+        )
+        btc_transacted_max = 0
+
+    # BTC sent max
+    if btc_sent_max == float("-inf"):
+        logger.info(
+            f"Address {address_query_response.address}: btc_sent_max is -infinity, setting to 0"
+        )
+        btc_sent_max = 0
+
+    # BTC received max
+    if btc_received_max == float("-inf"):
+        logger.info(
+            f"Address {address_query_response.address}: btc_received_max is -infinity, setting to 0"
+        )
+        btc_received_max = 0
+
+    # Fees max
+    if fees_max == float("-inf"):
+        logger.info(
+            f"Address {address_query_response.address}: fees_max is -infinity, setting to 0"
+        )
+        fees_max = 0
 
     # Create WalletData object
     wallet_data = WalletData(

@@ -15,6 +15,9 @@ APPLICATION_TYPE = os.getenv("APPLICATION_TYPE", APPLICATION_TYPE_API)  # or "WO
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 WORKER_API_URL = os.getenv("WORKER_API_URL", "http://127.0.0.1:8001")
 
+BLOCKSTREAM_API_URL = os.getenv("BLOCKSTREAM_API_URL", "https://blockstream.info/api")
+BLOCKSTREAM_RATE_LIMIT_MS = int(os.getenv("BLOCKSTREAM_RATE_LIMIT_MS", 250))
+
 # Route prefixes, could be shorter variable names
 API_WALLET_ROUTE_PREFIX = "/wallet"
 API_CONNECTED_WALLETS_ROUTE_PREFIX = "/connected-wallets"

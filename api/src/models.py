@@ -310,9 +310,6 @@ class Transaction(BaseModel):
     Represents a Bitcoin transaction.
     """
 
-    address: Optional[str] = (
-        None  # The Bitcoin address queried, not in the API response, hence optional, necessary for MongoDB storage
-    )
     txid: str  # Transaction ID
     version: int  # Transaction version
     locktime: int  # Lock time of the transaction

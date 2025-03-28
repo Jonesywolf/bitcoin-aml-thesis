@@ -6,6 +6,7 @@ from typing import List, Optional
 from pydantic import ValidationError
 from fastapi import status
 
+from src.config import BLOCKSTREAM_API_URL, BLOCKSTREAM_RATE_LIMIT_MS
 from src.models import (
     BitcoinAddressQueryResponse,
     Block,
@@ -23,9 +24,6 @@ class BlockstreamAPIWorker:
     It is designed to be used as a context manager to ensure proper cleanup.
     """
 
-    BASE_URL = "https://blockstream.info/api/"
-    RATE_LIMIT = 0.25  # seconds between requests
-
     def __init__(self):
         """
         Initialize the worker with an aiohttp session and a queue for tasks.
@@ -34,6 +32,13 @@ class BlockstreamAPIWorker:
         self.queue = asyncio.Queue()
         self.running = True
         self.worker_task = asyncio.create_task(self.worker())
+
+        self.base_url = (
+            BLOCKSTREAM_API_URL
+            if BLOCKSTREAM_API_URL.endswith("/")
+            else f"{BLOCKSTREAM_API_URL}/"
+        )
+        self.rate_limit = BLOCKSTREAM_RATE_LIMIT_MS / 1000.0
 
     async def close(self):
         """
@@ -56,7 +61,7 @@ class BlockstreamAPIWorker:
         Returns:
         - The response data for the query
         """
-        url = f"{self.BASE_URL}address/{base58_address}"
+        url = f"{self.base_url}address/{base58_address}"
         async with self.session.get(url) as response:
             if response.status != status.HTTP_200_OK:
                 logger.error(
@@ -86,9 +91,9 @@ class BlockstreamAPIWorker:
         - The list of transactions in the page
         """
         if last_seen_txid:
-            url = f"{self.BASE_URL}address/{base58_address}/txs/chain/{last_seen_txid}"
+            url = f"{self.base_url}address/{base58_address}/txs/chain/{last_seen_txid}"
         else:
-            url = f"{self.BASE_URL}address/{base58_address}/txs"
+            url = f"{self.base_url}address/{base58_address}/txs"
         async with self.session.get(url) as response:
             if response.status != status.HTTP_200_OK:
                 logger.error(
@@ -120,7 +125,7 @@ class BlockstreamAPIWorker:
         Returns:
         - The list of the 10 latest blocks
         """
-        url = f"{self.BASE_URL}blocks"
+        url = f"{self.base_url}blocks"
         async with self.session.get(url) as response:
             if response.status != status.HTTP_200_OK:
                 logger.error(f"Failed to fetch blocks: {response.status}")
@@ -139,7 +144,7 @@ class BlockstreamAPIWorker:
         Returns:
         - The latest block height
         """
-        url = f"{self.BASE_URL}blocks/tip/height"
+        url = f"{self.base_url}blocks/tip/height"
         async with self.session.get(url) as response:
             if response.status != status.HTTP_200_OK:
                 logger.error(f"Failed to fetch latest block height: {response.status}")
@@ -161,7 +166,7 @@ class BlockstreamAPIWorker:
         Returns:
         - The hash of the block at the specified height
         """
-        url = f"{self.BASE_URL}block-height/{block_height}"
+        url = f"{self.base_url}block-height/{block_height}"
         async with self.session.get(url) as response:
             if response.status != status.HTTP_200_OK:
                 logger.error(
@@ -184,7 +189,7 @@ class BlockstreamAPIWorker:
         Returns:
         - The list of transactions in the block
         """
-        url = f"{self.BASE_URL}block/{block_hash}/txs/{start_tx_idx}"
+        url = f"{self.base_url}block/{block_hash}/txs/{start_tx_idx}"
         async with self.session.get(url) as response:
             response_text = await response.text()
         if (
@@ -218,7 +223,7 @@ class BlockstreamAPIWorker:
                 break
             await job.run(self)
             self.queue.task_done()
-            await asyncio.sleep(self.RATE_LIMIT)  # Respect rate limit
+            await asyncio.sleep(self.rate_limit)  # Respect rate limit
 
     async def add_to_queue(self, job):
         """
@@ -279,7 +284,7 @@ class AddressInformationJob(Job):
         - The BitcoinAddressQueryResponse with the first page of transactions and all associated information
         """
         address_info = await worker.fetch_address_data(self.base58_address)
-        await asyncio.sleep(0.25)  # Respect rate limit
+        await asyncio.sleep(BLOCKSTREAM_RATE_LIMIT_MS / 1000.0)  # Respect rate limit
         if address_info:
             page_transactions = await worker.fetch_address_transactions(
                 self.base58_address
@@ -331,7 +336,9 @@ class TransactionRangeJob(Job):
             if len(page_transactions) < 25:
                 break
             last_seen_txid = page_transactions[-1].txid
-            await asyncio.sleep(0.25)  # Respect rate limit
+            await asyncio.sleep(
+                BLOCKSTREAM_RATE_LIMIT_MS / 1000.0
+            )  # Respect rate limit
         self.future.set_result(transactions)
 
 

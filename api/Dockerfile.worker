@@ -16,11 +16,12 @@ COPY res/ ./res/
 ENV NEO4J_URI=neo4j://neo4j:7687
 ENV NEO4J_USERNAME=neo4j
 ENV NEO4J_PASSWORD=password
-ENV APPLICATION_TYPE=API
-ENV WORKER_API_URL=http://worker:8001
+ENV APPLICATION_TYPE=WORKER
+ENV BLOCKSTREAM_API_URL=https://blockstream.info/api
+ENV BLOCKSTREAM_API_RATE_LIMIT=250
 
 # Expose the port the app runs on
-EXPOSE 8000
+EXPOSE 8001
 
 # Command to run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001"]

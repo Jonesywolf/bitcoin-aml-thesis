@@ -3,9 +3,8 @@ from typing import List, Dict
 from neo4j import Driver
 from pymongo import MongoClient
 from src.db.neo4j import (
-    add_wallet_data_to_db,
-    update_connected_wallets_in_db,
-    update_wallet_data_in_db,
+    upsert_wallet_data_to_db,
+    upsert_connected_wallets_in_db,
 )
 from src.extern.bitcoin_api import convert_to_wallet_data, get_address_data
 from src.ml.random_forest import infer_wallet_data_class
@@ -18,9 +17,10 @@ from src.extern.api_worker import (
     get_latest_blocks,
 )
 from src.db.mongodb import (
-    add_bitcoin_address_query_response_to_db,
-    get_bitcoin_address_query_response_from_db,
+    ADDRESS_NEVER_PROCESSED,
+    get_address_last_processed_block_height,
     get_last_processed_block_height,
+    set_address_last_processed_block_height,
     set_last_processed_block_height,
 )
 from src.models import Block, Transaction
@@ -99,7 +99,11 @@ class BlockProcessingWorker:
                     ):
                         # * Don't strictly need to await here, but would need to be careful about concurrent access
                         # * to the DB
-                        await self.process_block_transactions(block_transactions)
+                        await self.process_block_transactions(
+                            block_transactions,
+                            last_processed_block_height,
+                            latest_block_height,
+                        )
 
                         start_block_idx += 25
                         block_transactions = await get_block_transactions(
@@ -150,7 +154,10 @@ class BlockProcessingWorker:
         self._running = False
 
     async def process_block_transactions(
-        self, block_transactions: List[Transaction]
+        self,
+        block_transactions: List[Transaction],
+        last_processed_block_height: int,
+        latest_block_height: int,
     ) -> None:
         """
         ! There are way more efficient ways to do this, but this is a good start
@@ -160,106 +167,41 @@ class BlockProcessingWorker:
 
         Parameters:
         - block_transactions: The list of transactions in the block
+        - last_processed_block_height: The height of the last processed block
+        - latest_block_height: The height of the latest block
         """
-        address_tx_map: Dict[str, List[Transaction]] = {}
+        # Collect unique addresses from transaction inputs and outputs
+        unique_addresses = set()
 
         for tx in block_transactions:
-            tx_input_dict = {}
+            # Process input addresses
             for tx_input in tx.vin:
-                if (
-                    tx_input.prevout is None
-                    or tx_input.prevout.scriptpubkey_address is None
-                ):
-                    continue
-                if tx_input.prevout.scriptpubkey_address in tx_input_dict:
-                    tx_input_dict[
-                        tx_input.prevout.scriptpubkey_address
-                    ] += tx_input.prevout.value
-                else:
-                    tx_input_dict[tx_input.prevout.scriptpubkey_address] = (
-                        tx_input.prevout.value
-                    )
-            tx_output_dict = {}
+                if tx_input.prevout and tx_input.prevout.scriptpubkey_address:
+                    unique_addresses.add(tx_input.prevout.scriptpubkey_address)
+
+            # Process output addresses
             for tx_output in tx.vout:
-                if tx_output.scriptpubkey_address is None:
-                    continue
-                if tx_output.scriptpubkey_address in tx_output_dict:
-                    tx_output_dict[tx_output.scriptpubkey_address] += tx_output.value
-                else:
-                    tx_output_dict[tx_output.scriptpubkey_address] = tx_output.value
+                if tx_output.scriptpubkey_address:
+                    unique_addresses.add(tx_output.scriptpubkey_address)
 
-            tx_input_set = set(tx_input_dict.keys())
-            tx_output_set = set(tx_output_dict.keys())
-            tx_addr_set = tx_input_set.union(tx_output_set)
-
-            for address in tx_addr_set:
-                if address not in address_tx_map:
-                    address_tx_map[address] = []
-                address_tx_map[address].append(tx)
-
-        for address, transactions in address_tx_map.items():
+        # Process each unique address
+        for address in unique_addresses:
             response = None
-            cached_response = get_bitcoin_address_query_response_from_db(
-                self.mongo_client, address
+            address_last_processed_block_height = (
+                get_address_last_processed_block_height(self.mongo_client, address)
             )
-            if cached_response is None:
-                response = await get_address_data(
-                    self.api_worker, self.mongo_client, address
-                )
-                if response is None:
-                    logger.error(f"Error fetching address data for {address}")
-                    continue
-            else:
-                for tx in transactions:
-                    tx_input_dict = {}
-                    for tx_input in tx.vin:
-                        if (
-                            tx_input.prevout is None
-                            or tx_input.prevout.scriptpubkey_address is None
-                        ):
-                            continue
-                        if tx_input.prevout.scriptpubkey_address in tx_input_dict:
-                            tx_input_dict[
-                                tx_input.prevout.scriptpubkey_address
-                            ] += tx_input.prevout.value
-                        else:
-                            tx_input_dict[tx_input.prevout.scriptpubkey_address] = (
-                                tx_input.prevout.value
-                            )
-                    tx_output_dict = {}
-                    for tx_output in tx.vout:
-                        if tx_output.scriptpubkey_address is None:
-                            continue
-                        if tx_output.scriptpubkey_address in tx_output_dict:
-                            tx_output_dict[
-                                tx_output.scriptpubkey_address
-                            ] += tx_output.value
-                        else:
-                            tx_output_dict[tx_output.scriptpubkey_address] = (
-                                tx_output.value
-                            )
+            if address_last_processed_block_height >= last_processed_block_height:
+                continue  # This address has already been processed for this block
 
-                    # * Not sure if these are being updated correctly
-                    if address in tx_input_dict:
-                        cached_response.chain_stats.spent_txo_count += 1
-                        cached_response.chain_stats.spent_txo_sum += tx_input_dict[
-                            address
-                        ]
-                    if address in tx_output_dict:
-                        cached_response.chain_stats.funded_txo_count += 1
-                        cached_response.chain_stats.funded_txo_sum += tx_output_dict[
-                            address
-                        ]
+            response = await get_address_data(self.api_worker, address)
+            if response is None:
+                logger.error(f"Error fetching data for address {address}")
+                continue
 
-                    cached_response.chain_stats.tx_count += 1
-
-                    cached_response.transactions = [tx] + cached_response.transactions
-                    cached_response.last_seen_txid = tx.txid
-
-                response = cached_response
-
-            # Update the mongoDB database with the new transaction
-            add_bitcoin_address_query_response_to_db(self.mongo_client, response)
+            # Update the MongoDB databaseM
+            set_address_last_processed_block_height(
+                self.mongo_client, address, latest_block_height
+            )
 
             # Update in Neo4j
             wallet_data, connected_wallets = convert_to_wallet_data(response)
@@ -267,13 +209,8 @@ class BlockProcessingWorker:
             # Compute the inference for the wallet data
             wallet_data = infer_wallet_data_class(self.ml_session, wallet_data)
 
-            # Add or update the wallet data and connected wallets to the database depending on whether the
-            # API response was found in the MongoDB cache or not
-            if cached_response is None:
-                add_wallet_data_to_db(self.neo4j_driver, wallet_data)
-            else:
-                update_wallet_data_in_db(self.neo4j_driver, wallet_data)
-
-            update_connected_wallets_in_db(
+            # Add or update the wallet data and connected wallets to the database
+            upsert_wallet_data_to_db(self.neo4j_driver, wallet_data)
+            upsert_connected_wallets_in_db(
                 self.neo4j_driver, address, connected_wallets
             )

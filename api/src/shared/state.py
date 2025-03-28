@@ -63,13 +63,13 @@ async def worker_lifespan(app):
     logger.info("Started API worker")
     app.state.api_worker = blockchain_api_worker
 
-    # block_processing_worker = BlockProcessingWorker(
-    #     mongo_client, blockchain_api_worker, ml_session, neo4j_driver
-    # )
-    # app.state.block_processing_worker_task = asyncio.create_task(
-    #     block_processing_worker.start()
-    # )
-    # logger.info("Started block processing worker")
+    block_processing_worker = BlockProcessingWorker(
+        mongo_client, blockchain_api_worker, ml_session, neo4j_driver
+    )
+    app.state.block_processing_worker_task = asyncio.create_task(
+        block_processing_worker.start()
+    )
+    logger.info("Started block processing worker")
 
     yield
 

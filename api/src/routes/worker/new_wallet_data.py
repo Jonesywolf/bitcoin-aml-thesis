@@ -5,9 +5,8 @@ from src.extern.bitcoin_api import (
 )
 from src.db.neo4j import (
     get_wallet_data_from_db,
-    update_connected_wallets_in_db,
-    update_wallet_data_in_db,
-    add_wallet_data_to_db,
+    upsert_connected_wallets_in_db,
+    upsert_wallet_data_to_db,
 )
 from src.models import WalletData
 import logging
@@ -31,7 +30,7 @@ async def get_new_wallet_data(
     if wallet_data is None or not wallet_data.is_populated or force_update:
         # Use an external API to get the data
         new_wallet_data, connected_wallets = await get_wallet_data_from_api(
-            request.app.state.api_worker, request.app.state.mongo_client, base58_address
+            request.app.state.api_worker, base58_address
         )
         if new_wallet_data is None:
             # If the wallet is not found in the external API, return a 404 response
@@ -53,17 +52,12 @@ async def get_new_wallet_data(
                 request.app.state.ml_session, new_wallet_data
             )
 
-            # Add or update the wallet data and connected wallets to the database depending on whether the
-            # wallet data was found in the database or not, which could be true if force_update is True or
-            # the wallet is not populated
-            if wallet_data is None:
-                add_wallet_data_to_db(request.app.state.neo4j_driver, new_wallet_data)
-            else:
-                update_wallet_data_in_db(
-                    request.app.state.neo4j_driver, new_wallet_data
-                )
+            # Add or update the wallet data and connected wallets to the database
+            upsert_wallet_data_to_db(
+                request.app.state.neo4j_driver, base58_address, new_wallet_data
+            )
 
-            update_connected_wallets_in_db(
+            upsert_connected_wallets_in_db(
                 request.app.state.neo4j_driver, base58_address, connected_wallets
             )
 
