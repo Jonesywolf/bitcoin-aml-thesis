@@ -6,7 +6,7 @@ from src.extern.bitcoin_api import (
 from src.db.neo4j import (
     get_wallet_data_from_db,
     upsert_connected_wallets_in_db,
-    upsert_wallet_data_to_db,
+    upsert_wallet_data_in_db,
 )
 from src.models import WalletData
 import logging
@@ -53,9 +53,7 @@ async def get_new_wallet_data(
             )
 
             # Add or update the wallet data and connected wallets to the database
-            upsert_wallet_data_to_db(
-                request.app.state.neo4j_driver, base58_address, new_wallet_data
-            )
+            upsert_wallet_data_in_db(request.app.state.neo4j_driver, new_wallet_data)
 
             upsert_connected_wallets_in_db(
                 request.app.state.neo4j_driver, base58_address, connected_wallets

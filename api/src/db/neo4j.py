@@ -178,7 +178,7 @@ def get_wallet_data_from_db(
     return None
 
 
-def upsert_wallet_data_to_db(neo4j_driver: Driver, wallet_data: WalletData):
+def upsert_wallet_data_in_db(neo4j_driver: Driver, wallet_data: WalletData):
     """
     Add or update wallet data for a given Bitcoin wallet address in the Neo4j database.
     Creates the node if it doesn't exist, or updates it if it does.

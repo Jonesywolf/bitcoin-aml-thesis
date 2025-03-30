@@ -3,7 +3,7 @@ from typing import List, Dict
 from neo4j import Driver
 from pymongo import MongoClient
 from src.db.neo4j import (
-    upsert_wallet_data_to_db,
+    upsert_wallet_data_in_db,
     upsert_connected_wallets_in_db,
 )
 from src.extern.bitcoin_api import convert_to_wallet_data, get_address_data
@@ -210,7 +210,7 @@ class BlockProcessingWorker:
             wallet_data = infer_wallet_data_class(self.ml_session, wallet_data)
 
             # Add or update the wallet data and connected wallets to the database
-            upsert_wallet_data_to_db(self.neo4j_driver, wallet_data)
+            upsert_wallet_data_in_db(self.neo4j_driver, wallet_data)
             upsert_connected_wallets_in_db(
                 self.neo4j_driver, address, connected_wallets
             )
