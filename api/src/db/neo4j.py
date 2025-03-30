@@ -337,7 +337,7 @@ def _upsert_connected_wallets_in_db(
             """
             MERGE (w:Wallet {address: $wallet_address})
             MERGE (cw:Wallet {address: $connected_address})
-            ON CREATE SET cw.populated = False, cw.last_updated = timestamp()
+            ON CREATE SET cw.is_populated = False, cw.last_updated = timestamp()
             MERGE (w)-[r:TRANSACTED_WITH]->(cw)
             ON CREATE SET r.num_transactions = $num_transactions, r.amount_transacted = $amount_transacted
             ON MATCH SET r.num_transactions = $num_transactions, r.amount_transacted = $amount_transacted
