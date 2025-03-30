@@ -30,7 +30,7 @@ async def get_new_wallet_data(
     if wallet_data is None or not wallet_data.is_populated or force_update:
         # Use an external API to get the data
         new_wallet_data, connected_wallets = await get_wallet_data_from_api(
-            request.app.state.api_worker, base58_address
+            request.app.state.api_worker, request.app.state.mongo_client, base58_address
         )
         if new_wallet_data is None:
             # If the wallet is not found in the external API, return a 404 response

@@ -26,12 +26,14 @@ logger = logging.getLogger(__name__)
 
 async def get_wallet_data_from_api(
     api_worker: BlockstreamAPIWorker,
+    mongo_client: MongoClient,
     base58_address: str,
 ) -> Tuple[WalletData, ConnectedWallets]:
     """
     Convert the wallet data from the blockstream.info to a WalletData object.
 
     @param api_worker: The blockstream.com API worker instance.
+    @param mongo_client: The MongoDB client instance.
     @param base58_address: The base58 encoded Bitcoin address to query.
     @return: The WalletData object populated with the data from the API.
     @return: The ConnectedWallets object populated with the connected wallets from the API.
@@ -44,7 +46,7 @@ async def get_wallet_data_from_api(
 
     # Update the last processed block height for the address in the database
     set_address_last_processed_block_height(
-        api_worker, base58_address, address_data.transactions[0].status.block_height
+        mongo_client, base58_address, address_data.transactions[0].status.block_height
     )
     return wallet_data, connected_wallets
 
